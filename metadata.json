@@ -1,0 +1,6 @@
+{
+  "name": "Diet Soda - Pure Zero Refreshment",
+  "description": "Interactive full-viewport 3D landing page for Diet Soda with cursor parallax, repulsive floating berries, and flavor switching.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

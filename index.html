@@ -1,0 +1,3072 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Diet Soda | Pure Zero Refreshment</title>
+    <meta name="description" content="Experience the crisp, clean taste of Diet Soda. Zero sugar, zero compromise.">
+    <meta property="og:title" content="Diet Soda | Pure Zero Refreshment">
+    <meta property="og:description" content="Experience the crisp, clean taste of Diet Soda. Zero sugar, zero compromise.">
+    <meta property="og:type" content="website">
+    <meta name="twitter:card" content="summary_large_image">
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;700;900&family=Inter:wght@400;500&family=Manrope:wght@400;700&family=Galada&display=swap" rel="stylesheet">
+    
+    <script>
+        // Suppress and prevent "Mesh is missing primitive index association" false-positive warning
+        const origConsoleError = console.error;
+        console.error = function(...args) {
+            if (typeof args[0] === 'string' && args[0].includes('Mesh is missing primitive index association')) {
+                return;
+            }
+            origConsoleError.apply(console, args);
+        };
+
+        // Automatic transparent GLB multi-scene sanitizer:
+        // glTF/GLB models with multiple scenes cause Three.js / model-viewer to lose primitive
+        // associations in reduceAssociations. This intercepts GLB fetches and retains only the active scene.
+        const origFetch = window.fetch;
+        window.fetch = async function(...args) {
+            const response = await origFetch.apply(this, args);
+            const url = typeof args[0] === 'string' ? args[0] : (args[0]?.url || '');
+            if (url.includes('.glb')) {
+                try {
+                    const buffer = await response.clone().arrayBuffer();
+                    const view = new DataView(buffer);
+                    if (view.byteLength > 20 && view.getUint32(0, true) === 0x46546C67) { // 'glTF'
+                        const jsonLength = view.getUint32(12, true);
+                        const jsonBytes = new Uint8Array(buffer, 20, jsonLength);
+                        const jsonStr = new TextDecoder().decode(jsonBytes);
+                        const gltf = JSON.parse(jsonStr);
+
+                        if (gltf.scenes && gltf.scenes.length > 1) {
+                            const activeSceneIdx = gltf.scene || 0;
+                            gltf.scenes = [ gltf.scenes[activeSceneIdx] ];
+                            gltf.scene = 0;
+
+                            let newJsonStr = JSON.stringify(gltf);
+                            while (newJsonStr.length % 4 !== 0) newJsonStr += ' ';
+                            const newJsonBytes = new TextEncoder().encode(newJsonStr);
+                            const newJsonLen = newJsonBytes.byteLength;
+
+                            const binOffset = 20 + jsonLength;
+                            const binBytes = new Uint8Array(buffer, binOffset);
+
+                            const newTotalLen = 12 + 8 + newJsonLen + binBytes.byteLength;
+                            const newBuffer = new ArrayBuffer(newTotalLen);
+                            const newView = new DataView(newBuffer);
+
+                            newView.setUint32(0, 0x46546C67, true);
+                            newView.setUint32(4, 2, true);
+                            newView.setUint32(8, newTotalLen, true);
+
+                            newView.setUint32(12, newJsonLen, true);
+                            newView.setUint32(16, 0x4E4F534A, true); // 'JSON'
+                            new Uint8Array(newBuffer, 20, newJsonLen).set(newJsonBytes);
+
+                            new Uint8Array(newBuffer, 20 + newJsonLen).set(binBytes);
+
+                            return new Response(newBuffer, {
+                                status: response.status,
+                                statusText: response.statusText,
+                                headers: response.headers
+                            });
+                        }
+                    }
+                } catch(e) {
+                    // Fall back to original response if parsing fails
+                }
+            }
+            return response;
+        };
+    </script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js"></script>
+    <script type="module" src="https://unpkg.com/@google/model-viewer/dist/model-viewer.min.js"></script>
+
+    <style>
+        :root {
+            --bg-color: #0a0a0a;
+            --text-color: #ffffff;
+            --accent-color: #ffffff;
+            --muted-color: rgba(255, 255, 255, 0.7);
+            --glass-bg: rgba(255, 255, 255, 0.05);
+            --glass-border: rgba(255, 255, 255, 0.1);
+            --font-main: 'Inter', sans-serif;
+            --font-heading: 'Galada', cursive;
+
+            /* Dynamic Background Variables */
+            --bg-inner: #0b8a78;
+            --bg-mid: #044e3b;
+            --bg-outer: #011411;
+
+            /* Dynamic Ground Reflection Variables */
+            --reflection-glow: rgba(16, 185, 129, 0.45);
+            --reflection-color: rgba(11, 138, 120, 0.35);
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            background: radial-gradient(circle at center, var(--bg-inner) 0%, var(--bg-mid) 50%, var(--bg-outer) 100%);
+            color: var(--text-color);
+            font-family: var(--font-main);
+            overflow: hidden; /* Remove scroll */
+            height: 100vh;
+            transition: background 1.2s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        body.blue-theme {
+            --bg-inner: #0b4f8a;
+            --bg-mid: #04294e;
+            --bg-outer: #010c14;
+            --reflection-glow: rgba(59, 130, 246, 0.5);
+            --reflection-color: rgba(11, 79, 138, 0.4);
+        }
+
+        /* 1. Bubbles container */
+        #bubbles-container {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 25;
+            overflow: hidden;
+        }
+
+        .bubble-img {
+            position: absolute;
+            pointer-events: auto;
+            cursor: pointer;
+            user-select: none;
+            transition: filter 0.2s ease, transform 0.2s ease;
+        }
+
+        .bubble-img:hover {
+            filter: brightness(1.6) drop-shadow(0 0 10px rgba(255, 255, 255, 0.85));
+            transform: scale(1.2);
+        }
+
+        @keyframes floatUpImg {
+            0% {
+                transform: translateY(0) translateX(0) rotate(0deg);
+                opacity: 0;
+            }
+            10% { opacity: 0.4; }
+            90% { opacity: 0.4; }
+            100% {
+                transform: translateY(-110vh) translateX(30px) rotate(360deg);
+                opacity: 0;
+            }
+        }
+
+        /* 2. Header (glass nav) */
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 2rem 4%;
+            position: fixed;
+            top: 0;
+            width: 100%;
+            z-index: 100;
+        }
+
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            font-weight: 700;
+            font-size: 1.2rem;
+            font-family: var(--font-heading);
+            user-select: none;
+        }
+
+        .nav {
+            display: flex;
+            gap: 0.5rem;
+            background: var(--glass-bg);
+            padding: 0.4rem;
+            border-radius: 100px;
+            border: 1px solid var(--glass-border);
+        }
+
+        .nav.glass {
+            position: relative;
+            background: rgba(255, 255, 255, 0.08);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1), inset 0 0 0 1px rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+        }
+
+        .nav-item {
+            font-family: 'Manrope', sans-serif;
+            color: var(--muted-color);
+            text-decoration: none;
+            font-size: 0.85rem;
+            font-weight: 500;
+            padding: 0.5rem 1.2rem;
+            border-radius: 100px;
+            transition: all 0.3s ease;
+        }
+
+        .nav-item:hover,
+        .nav-item.active {
+            background: #fbcfe8;
+            color: #011d17;
+        }
+
+        .header-actions {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+
+        .sound-toggle-btn {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            background: var(--glass-bg);
+            border: 1px solid var(--glass-border);
+            color: var(--text-color);
+            padding: 0.75rem 1.25rem;
+            border-radius: 100px;
+            font-size: 0.82rem;
+            font-weight: 600;
+            font-family: 'Manrope', sans-serif;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            user-select: none;
+        }
+
+        .sound-toggle-btn:hover {
+            background: rgba(255, 255, 255, 0.12);
+            border-color: rgba(255, 255, 255, 0.3);
+            transform: translateY(-2px);
+        }
+
+        .sound-toggle-btn.active {
+            border-color: #fbcfe8;
+            color: #ffffff;
+            box-shadow: 0 0 15px rgba(251, 207, 232, 0.2);
+        }
+
+        .sound-toggle-btn.muted {
+            opacity: 0.65;
+            color: var(--muted-color);
+            border-color: var(--glass-border);
+        }
+
+        .sound-toggle-btn svg {
+            flex-shrink: 0;
+            transition: transform 0.2s ease;
+        }
+
+        .contact-btn {
+            background: rgba(0, 0, 0, 0.5);
+            color: white;
+            border: none;
+            padding: 0.9rem 2rem;
+            border-radius: 100px;
+            font-weight: 600;
+            font-size: 0.85rem;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            box-shadow: none;
+        }
+
+        .contact-btn:hover {
+            background: rgba(0, 0, 0, 0.7);
+            transform: translateY(-2px);
+            box-shadow: none;
+        }
+
+        /* 3. Hero */
+        .hero {
+            height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 0 4%;
+            padding-top: 5rem;
+        }
+
+        .hero-content {
+            display: flex;
+            justify-content: space-between;
+            align-items: stretch; /* Stretch columns to full height */
+            width: 100%;
+            max-width: 100%;
+            padding: 0;
+            height: 100%;
+            position: relative;
+        }
+
+        /* Typography */
+        .main-title,
+        .side-title {
+            font-family: var(--font-heading);
+            font-size: clamp(5rem, 10vw, 12rem);
+            line-height: 0.8;
+            font-weight: 400;
+            text-transform: none;
+            white-space: nowrap;
+            color: white;
+            letter-spacing: normal;
+        }
+
+        .outline {
+            color: var(--text-color);
+        }
+
+        /* 3a. Leaves Container */
+        .leaves-container {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: -1; /* Even further behind */
+            transition: transform 0.1s ease-out;
+        }
+
+        .leaf {
+            position: absolute;
+            width: 60px;
+            height: 60px;
+            pointer-events: none;
+            z-index: -1;
+            filter: drop-shadow(0 5px 15px rgba(0, 0, 0, 0.2));
+        }
+
+        .l1 { top: 10%; left: 15%; }
+        .l2 { top: 40%; left: 80%; width: 140px; height: 140px; opacity: 0.4; }
+        .l3 { top: 70%; left: 75%; width: 80px; height: 80px; }
+        .l4 { top: 85%; left: 20%; width: 120px; height: 120px; opacity: 0.3; }
+
+        /* 3b. Left Column */
+        .hero-left {
+            display: flex;
+            flex-direction: column;
+            height: 100%;
+            padding: 6rem 0;
+            gap: 2rem;
+            z-index: 100;
+        }
+
+        @keyframes fadeInEntry {
+            to { opacity: 1; transform: none; }
+        }
+
+        .description {
+            color: var(--muted-color);
+            font-size: 1.1rem;
+            line-height: 1.6;
+            max-width: 400px;
+        }
+
+        .cta-group {
+            perspective: 800px;
+            transform-style: preserve-3d;
+            will-change: transform;
+        }
+
+        .primary-btn {
+            display: flex;
+            align-items: center;
+            gap: 1.5rem;
+            background: rgba(0, 0, 0, 0.55);
+            color: white;
+            border: 1px solid rgba(255, 255, 255, 0.18);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            padding: 0.4rem 0.4rem 0.4rem 1.5rem;
+            border-radius: 100px;
+            font-weight: 700;
+            cursor: pointer;
+            width: fit-content;
+            transition: background 0.3s ease, border-color 0.3s ease, box-shadow 0.3s ease;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.35);
+            will-change: transform;
+            transform-style: preserve-3d;
+        }
+
+        .primary-btn:hover {
+            background: rgba(0, 0, 0, 0.75);
+            border-color: rgba(251, 207, 232, 0.5);
+            box-shadow: 0 14px 35px rgba(0, 0, 0, 0.5);
+        }
+
+        .plus-icon {
+            background: #fbcfe8;
+            color: #011d17;
+            width: 38px;
+            height: 38px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 50%;
+            font-size: 1.4rem;
+            font-weight: 900;
+            line-height: 1;
+            padding-bottom: 2px; /* Compensate for baseline shift */
+            border: none;
+            transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+        }
+
+        .primary-btn:hover .plus-icon {
+            transform: rotate(90deg) scale(1.08);
+        }
+
+        .award-badge {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            margin-top: auto; /* Push to bottom */
+            perspective: 800px;
+            transform-style: preserve-3d;
+            will-change: transform;
+            cursor: pointer;
+            padding: 0.6rem 0.9rem;
+            border-radius: 16px;
+            border: 1px solid transparent;
+            transition: background 0.3s ease, border-color 0.3s ease, transform 0.3s ease;
+        }
+
+        .award-badge:hover {
+            background: rgba(255, 255, 255, 0.08);
+            border-color: rgba(255, 255, 255, 0.2);
+        }
+
+        .award-icon {
+            width: 48px;
+            height: 48px;
+            background: var(--glass-bg);
+            border: 1px solid var(--glass-border);
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: transform 0.3s ease, border-color 0.3s ease;
+        }
+
+        .award-badge:hover .award-icon {
+            transform: scale(1.06);
+            border-color: rgba(251, 207, 232, 0.5);
+        }
+
+        .award-text { display: flex; flex-direction: column; }
+        .award-title { font-size: 0.7rem; letter-spacing: 0.1em; color: var(--muted-color); }
+        .award-subtitle { font-size: 0.85rem; font-weight: 600; }
+
+        /* Modal & Drawer Showcase System */
+        .modal-overlay {
+            position: fixed;
+            inset: 0;
+            z-index: 300;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+            padding: 1.5rem;
+        }
+
+        .modal-overlay.active {
+            opacity: 1;
+            pointer-events: auto;
+        }
+
+        .modal-backdrop {
+            position: absolute;
+            inset: 0;
+            background: rgba(1, 15, 12, 0.78);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+        }
+
+        body.blue-theme .modal-backdrop {
+            background: rgba(1, 12, 20, 0.78);
+        }
+
+        .modal-card {
+            position: relative;
+            z-index: 1;
+            width: 100%;
+            max-width: 680px;
+            max-height: 85vh;
+            background: rgba(18, 28, 25, 0.9);
+            border: 1px solid rgba(255, 255, 255, 0.16);
+            border-radius: 28px;
+            padding: 2.2rem;
+            color: #ffffff;
+            box-shadow: 0 25px 60px rgba(0, 0, 0, 0.75), inset 0 1px 0 rgba(255, 255, 255, 0.2);
+            backdrop-filter: blur(24px);
+            -webkit-backdrop-filter: blur(24px);
+            overflow-y: auto;
+            transform: scale(0.92) translateY(20px);
+            transition: transform 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+
+        body.blue-theme .modal-card {
+            background: rgba(14, 24, 36, 0.9);
+        }
+
+        .modal-overlay.active .modal-card {
+            transform: scale(1) translateY(0);
+        }
+
+        .modal-close-btn {
+            position: absolute;
+            top: 1.25rem;
+            right: 1.25rem;
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            background: rgba(255, 255, 255, 0.08);
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            color: #ffffff;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.4rem;
+            line-height: 1;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .modal-close-btn:hover {
+            background: #fbcfe8;
+            color: #011d17;
+            transform: rotate(90deg);
+        }
+
+        .modal-tag {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.4rem;
+            background: rgba(251, 207, 232, 0.15);
+            color: #fbcfe8;
+            border: 1px solid rgba(251, 207, 232, 0.3);
+            padding: 0.3rem 0.8rem;
+            border-radius: 100px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            margin-bottom: 0.8rem;
+        }
+
+        .modal-title {
+            font-family: var(--font-heading);
+            font-size: 2.3rem;
+            line-height: 1.1;
+            margin-bottom: 0.5rem;
+            color: #ffffff;
+        }
+
+        .modal-desc {
+            color: var(--muted-color);
+            font-size: 0.95rem;
+            line-height: 1.6;
+            margin-bottom: 1.5rem;
+        }
+
+        .modal-grid-2 {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1rem;
+            margin-bottom: 1.5rem;
+        }
+
+        @media (max-width: 600px) {
+            .modal-grid-2 { grid-template-columns: 1fr; }
+            .modal-card { padding: 1.5rem; }
+        }
+
+        .info-pill-box {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 18px;
+            padding: 1.2rem;
+            transition: border-color 0.2s ease;
+        }
+
+        .info-pill-box:hover {
+            border-color: rgba(255, 255, 255, 0.25);
+        }
+
+        .info-pill-title {
+            font-weight: 700;
+            font-size: 0.95rem;
+            margin-bottom: 0.35rem;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .info-pill-desc {
+            font-size: 0.82rem;
+            color: var(--muted-color);
+            line-height: 1.5;
+        }
+
+        .nutrition-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 0.45rem 0;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+            font-size: 0.85rem;
+        }
+
+        .nutrition-row:last-child {
+            border-bottom: none;
+        }
+
+        .option-selector {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 0.75rem;
+            margin-bottom: 1.5rem;
+        }
+
+        .option-btn {
+            background: rgba(255, 255, 255, 0.06);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            border-radius: 16px;
+            padding: 0.9rem 0.6rem;
+            color: white;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            display: flex;
+            flex-direction: column;
+            gap: 0.25rem;
+        }
+
+        .option-btn:hover {
+            background: rgba(255, 255, 255, 0.1);
+            border-color: rgba(255, 255, 255, 0.3);
+        }
+
+        .option-btn.selected {
+            border-color: #fbcfe8;
+            background: rgba(251, 207, 232, 0.15);
+            box-shadow: 0 0 15px rgba(251, 207, 232, 0.2);
+        }
+
+        .option-name { font-size: 0.85rem; font-weight: 700; }
+        .option-price { font-size: 0.75rem; color: #fbcfe8; }
+
+        .form-input {
+            width: 100%;
+            background: rgba(255, 255, 255, 0.06);
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            border-radius: 14px;
+            padding: 0.85rem 1.1rem;
+            color: #ffffff;
+            font-family: inherit;
+            font-size: 0.9rem;
+            outline: none;
+            transition: border-color 0.2s ease;
+            margin-bottom: 1rem;
+        }
+
+        .form-input:focus {
+            border-color: #fbcfe8;
+            background: rgba(255, 255, 255, 0.09);
+        }
+
+        .form-submit-btn {
+            width: 100%;
+            background: #fbcfe8;
+            color: #011d17;
+            font-weight: 700;
+            font-size: 1rem;
+            border: none;
+            padding: 1rem;
+            border-radius: 100px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
+        }
+
+        .form-submit-btn:hover {
+            background: #fdf2f8;
+            transform: translateY(-2px);
+            box-shadow: 0 10px 25px rgba(251, 207, 232, 0.35);
+        }
+
+        .badge-pill-group {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+            margin-top: 1rem;
+        }
+
+        .badge-pill {
+            background: rgba(255, 255, 255, 0.07);
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            border-radius: 100px;
+            padding: 0.35rem 0.85rem;
+            font-size: 0.75rem;
+            font-weight: 500;
+            color: rgba(255, 255, 255, 0.85);
+            display: inline-flex;
+            align-items: center;
+            gap: 0.35rem;
+        }
+
+        .review-card-item {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            border-radius: 18px;
+            padding: 1.15rem;
+            margin-bottom: 0.85rem;
+            transition: all 0.2s ease;
+        }
+
+        .review-card-item:hover {
+            border-color: rgba(251, 207, 232, 0.35);
+            background: rgba(255, 255, 255, 0.07);
+        }
+
+        .review-stars {
+            color: #fbbf24;
+            letter-spacing: 2px;
+            font-size: 0.9rem;
+            margin-bottom: 0.4rem;
+        }
+
+        .review-quote {
+            font-size: 0.88rem;
+            line-height: 1.55;
+            color: rgba(255, 255, 255, 0.9);
+            margin-bottom: 0.6rem;
+            font-style: italic;
+        }
+
+        .review-author {
+            font-size: 0.78rem;
+            color: var(--muted-color);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .flavor-tester-card {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            border-radius: 20px;
+            padding: 1.25rem;
+            cursor: pointer;
+            transition: all 0.25s ease;
+            display: flex;
+            flex-direction: column;
+            gap: 0.6rem;
+            position: relative;
+        }
+
+        .flavor-tester-card:hover {
+            border-color: rgba(255, 255, 255, 0.3);
+            background: rgba(255, 255, 255, 0.08);
+            transform: translateY(-2px);
+        }
+
+        .flavor-tester-card.active-test {
+            border-color: #fbcfe8;
+            background: rgba(251, 207, 232, 0.12);
+            box-shadow: 0 0 20px rgba(251, 207, 232, 0.15);
+        }
+
+        .qty-control-box {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            background: rgba(255, 255, 255, 0.06);
+            border: 1px solid rgba(255, 255, 255, 0.14);
+            border-radius: 16px;
+            padding: 0.6rem 1rem;
+            margin-bottom: 1.25rem;
+        }
+
+        .qty-stepper {
+            display: flex;
+            align-items: center;
+            gap: 0.8rem;
+        }
+
+        .qty-btn {
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            color: #ffffff;
+            font-size: 1.1rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .qty-btn:hover {
+            background: #fbcfe8;
+            color: #011d17;
+            border-color: #fbcfe8;
+        }
+
+        .order-summary-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 0.4rem 0;
+            font-size: 0.9rem;
+            color: var(--muted-color);
+        }
+
+        .order-summary-row.total-row {
+            color: #ffffff;
+            font-size: 1.15rem;
+            font-weight: 700;
+            border-top: 1px solid rgba(255, 255, 255, 0.15);
+            padding-top: 0.8rem;
+            margin-top: 0.5rem;
+            margin-bottom: 1.2rem;
+        }
+
+        .order-success-card {
+            text-align: center;
+            padding: 2rem 1rem;
+        }
+
+        .order-success-icon {
+            width: 72px;
+            height: 72px;
+            border-radius: 50%;
+            background: rgba(16, 185, 129, 0.2);
+            border: 2px solid #10b981;
+            color: #10b981;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 2.2rem;
+            margin: 0 auto 1.2rem;
+        }
+
+        /* 3c & 3e. Berries Containers */
+        .berries-container {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 60; /* Positioned between can and text (100) */
+            transition: transform 0.1s ease-out;
+        }
+
+        .berries-container-bg {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 0; /* Behind everything */
+            transition: transform 0.1s ease-out;
+        }
+
+        .berry {
+            position: absolute;
+            width: 80px;
+            height: 80px;
+            outline: none;
+            --progress-bar-color: transparent;
+            filter: drop-shadow(0 10px 20px rgba(0, 0, 0, 0.35));
+            transition: transform 0.8s cubic-bezier(0.2, 0.8, 0.2, 1);
+        }
+
+        .berry.no-animation { animation: none !important; }
+
+        .b1 { top: 22%; left: 24%; width: 100px; height: 100px; }
+        .b2 { top: 66%; left: 39%; width: 56px; height: 56px; }
+        .b3 { top: 22%; left: 56%; width: 110px; height: 110px; }
+        .b4 { top: 13%; left: 45%; width: 68px; height: 68px; }
+        .b5 { top: 78%; left: 20%; width: 65px; height: 65px; }
+        .b6 { top: 70%; left: 74%; width: 85px; height: 85px; }
+        .b7 { top: 16%; left: 38%; width: 48px; height: 48px; opacity: 0.65; }
+        .b8 { top: 48%; left: 58%; width: 44px; height: 44px; opacity: 0.55; }
+        .b9 { top: 82%; left: 36%; width: 48px; height: 48px; opacity: 0.65; }
+
+        /* 3d. Hero Center (Product Can) */
+        .hero-center {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 1;
+            opacity: 0;
+            animation: fadeIn 1.5s ease-out 0.3s forwards, float 6s ease-in-out infinite;
+            pointer-events: none;
+            background: radial-gradient(circle at center, rgba(16, 185, 129, 0.1) 0%, transparent 70%);
+        }
+
+        @keyframes fadeIn { to { opacity: 1; } }
+
+        @keyframes float {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-20px); }
+        }
+
+        /* Dynamic Ground Reflection & Pedestal Shadow */
+        .product-ground-stage {
+            position: fixed;
+            top: 74%;
+            left: 50%;
+            width: 480px;
+            height: 190px;
+            pointer-events: none;
+            z-index: 0;
+            transform-origin: center center;
+            transform: translate(-50%, -50%) rotateX(64deg) rotateZ(-15deg);
+            will-change: transform, opacity, filter;
+            transition: filter 0.3s ease;
+        }
+
+        .ground-shadow {
+            position: absolute;
+            inset: 0;
+            border-radius: 50%;
+            background: radial-gradient(ellipse 65% 38% at 50% 50%, rgba(0, 0, 0, 0.95) 0%, rgba(0, 0, 0, 0.65) 32%, rgba(0, 18, 14, 0.35) 58%, transparent 78%);
+            filter: blur(14px);
+        }
+
+        .ground-glow {
+            position: absolute;
+            inset: -20px;
+            border-radius: 50%;
+            background: radial-gradient(ellipse 70% 45% at 50% 50%, var(--reflection-glow) 0%, rgba(0, 0, 0, 0.1) 45%, transparent 75%);
+            filter: blur(24px);
+            opacity: 0.9;
+            transition: background 1.2s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .ground-reflection {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 320px;
+            height: 120px;
+            border-radius: 50%;
+            background: radial-gradient(ellipse 60% 32% at 50% 40%, rgba(255, 255, 255, 0.28) 0%, var(--reflection-color) 35%, rgba(0, 0, 0, 0.7) 75%);
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.8), inset 0 2px 6px rgba(255, 255, 255, 0.35), inset 0 -4px 10px rgba(0, 0, 0, 0.7);
+            filter: blur(2.5px);
+            opacity: 0.92;
+            backdrop-filter: blur(6px);
+            -webkit-backdrop-filter: blur(6px);
+            mask-image: radial-gradient(ellipse 80% 60% at 50% 50%, black 25%, rgba(0, 0, 0, 0.6) 60%, transparent 95%);
+            -webkit-mask-image: radial-gradient(ellipse 80% 60% at 50% 50%, black 25%, rgba(0, 0, 0, 0.6) 60%, transparent 95%);
+        }
+
+        .reflection-rim {
+            position: absolute;
+            inset: 2px;
+            border-radius: 50%;
+            border: 1px solid rgba(255, 255, 255, 0.25);
+            box-shadow: 0 0 15px rgba(255, 255, 255, 0.15);
+            opacity: 0.65;
+        }
+
+        .reflection-specular {
+            position: absolute;
+            top: 18%;
+            left: 28%;
+            width: 44%;
+            height: 28%;
+            border-radius: 50%;
+            background: radial-gradient(ellipse at center, rgba(255, 255, 255, 0.45) 0%, transparent 70%);
+            filter: blur(4px);
+            transform: rotate(-10deg);
+        }
+
+        .main-product-3d {
+            width: 80vw;
+            height: 80vh;
+            outline: none;
+            --progress-bar-color: transparent;
+            --poster-color: transparent;
+            z-index: 1;
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%) rotate(25deg);
+            pointer-events: none;
+        }
+
+        .main-product-3d[camera-controls] { pointer-events: auto; }
+
+        /* 3f. Right Column */
+        .hero-right {
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            align-items: flex-end;
+            text-align: right;
+            height: 100%;
+            padding: 6rem 0;
+            z-index: 100;
+            width: 450px;
+            pointer-events: none;
+        }
+
+        @keyframes fadeInLeft {
+            to { opacity: 1; transform: translateX(0); }
+        }
+
+        .product-carousel {
+            display: flex;
+            flex-direction: column;
+            gap: 1.5rem;
+            align-items: flex-end;
+            pointer-events: auto; /* Enable interaction */
+        }
+
+        .carousel-cards { display: flex; gap: 1rem; }
+
+        .card {
+            background: var(--glass-bg);
+            border: 1px solid var(--glass-border);
+            padding: 1rem;
+            padding-top: 5rem;
+            border-radius: 28px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 1.5rem;
+            cursor: pointer;
+            transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            width: 135px;
+            position: relative;
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            text-align: center;
+        }
+
+        .card:hover {
+            background: rgba(255, 255, 255, 0.12);
+            border-color: rgba(255, 255, 255, 0.4);
+        }
+
+        .card.active {
+            border-color: #fbcfe8;
+            border-width: 1px;
+            background: var(--glass-bg);
+            box-shadow: none;
+        }
+
+        .card img {
+            width: 140px;
+            height: auto;
+            margin-top: -8rem;
+            filter: drop-shadow(0 20px 35px rgba(0, 0, 0, 0.5));
+            transition: transform 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) !important;
+            display: block;
+            will-change: transform;
+            pointer-events: none; /* Mouse passes through image to trigger card hover */
+        }
+
+        .card:hover img {
+            transform: translateY(-30px) rotate(-12deg) scale(1.15) !important;
+        }
+
+        .card-info {
+            display: flex;
+            flex-direction: column;
+            font-size: 0.7rem;
+            width: 100%;
+            word-wrap: break-word;
+        }
+
+        .card-info span:first-child { font-weight: 600; }
+        .card-info span:last-child { color: var(--muted-color); }
+
+        .carousel-nav { display: flex; gap: 1rem; }
+
+        .nav-arrow {
+            background: var(--glass-bg);
+            border: 1px solid var(--glass-border);
+            color: white;
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: background 0.3s;
+        }
+
+        .nav-arrow:hover { background: rgba(255, 255, 255, 0.1); }
+
+        .side-title { align-self: flex-end; text-align: right; }
+
+        @keyframes shine {
+            from { transform: translateX(-100%) rotate(45deg); }
+            to { transform: translateX(200%) rotate(45deg); }
+        }
+
+        /* ------------------------------------------------------------- */
+        /* Lightweight CSS-based Loading Splash Screen                  */
+        /* ------------------------------------------------------------- */
+        #loading-screen {
+            position: fixed;
+            inset: 0;
+            width: 100vw;
+            height: 100vh;
+            background: radial-gradient(circle at center, #07382e 0%, #03211b 55%, #01110e 100%);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 99999;
+            transition: opacity 0.7s cubic-bezier(0.22, 1, 0.36, 1), visibility 0.7s ease;
+            pointer-events: all;
+            user-select: none;
+        }
+
+        #loading-screen.loaded {
+            opacity: 0;
+            visibility: hidden;
+            pointer-events: none;
+        }
+
+        .loader-content {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            text-align: center;
+            position: relative;
+        }
+
+        .loader-can-wrap {
+            position: relative;
+            width: 80px;
+            height: 140px;
+            margin-bottom: 1.75rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .loader-can-glow {
+            position: absolute;
+            width: 120px;
+            height: 120px;
+            background: radial-gradient(circle, rgba(16, 185, 129, 0.45) 0%, rgba(251, 207, 232, 0.15) 50%, transparent 75%);
+            border-radius: 50%;
+            filter: blur(16px);
+            animation: loaderGlowPulse 2s ease-in-out infinite alternate;
+        }
+
+        .loader-can-icon {
+            width: 58px;
+            height: 105px;
+            border-radius: 14px 14px 12px 12px;
+            border: 2px solid rgba(255, 255, 255, 0.65);
+            background: linear-gradient(135deg, rgba(255, 255, 255, 0.22) 0%, rgba(16, 185, 129, 0.3) 50%, rgba(251, 207, 232, 0.15) 100%);
+            backdrop-filter: blur(8px);
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5), inset 0 0 14px rgba(255, 255, 255, 0.2);
+            position: relative;
+            animation: loaderCanBob 2.2s ease-in-out infinite alternate;
+            overflow: hidden;
+        }
+
+        .loader-can-icon::before {
+            content: '';
+            position: absolute;
+            top: 2px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 30px;
+            height: 5px;
+            border-radius: 3px;
+            background: rgba(255, 255, 255, 0.85);
+        }
+
+        .loader-can-icon::after {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.4), transparent);
+            animation: loaderCanShimmer 1.8s infinite;
+        }
+
+        .loader-brand {
+            font-family: var(--font-heading);
+            font-size: 2.8rem;
+            color: #ffffff;
+            line-height: 1;
+            margin-bottom: 0.35rem;
+            letter-spacing: 0.02em;
+            text-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+        }
+
+        .loader-subtitle {
+            font-size: 0.82rem;
+            letter-spacing: 0.22em;
+            text-transform: uppercase;
+            color: #a7f3d0;
+            font-weight: 600;
+            margin-bottom: 1.75rem;
+            opacity: 0.9;
+        }
+
+        .loader-track {
+            width: 170px;
+            height: 4px;
+            background: rgba(255, 255, 255, 0.12);
+            border-radius: 9999px;
+            overflow: hidden;
+            position: relative;
+            box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.4);
+        }
+
+        .loader-bar {
+            position: absolute;
+            top: 0;
+            bottom: 0;
+            width: 40%;
+            background: linear-gradient(90deg, #10b981, #fbcfe8);
+            border-radius: 9999px;
+            box-shadow: 0 0 12px rgba(16, 185, 129, 0.8);
+            animation: loaderBarSweep 1.6s cubic-bezier(0.65, 0, 0.35, 1) infinite;
+        }
+
+        .loader-text {
+            font-size: 0.75rem;
+            color: rgba(255, 255, 255, 0.65);
+            margin-top: 1rem;
+            letter-spacing: 0.06em;
+        }
+
+        @keyframes loaderGlowPulse {
+            from { transform: scale(0.9); opacity: 0.4; }
+            to { transform: scale(1.25); opacity: 0.85; }
+        }
+
+        @keyframes loaderCanBob {
+            from { transform: translateY(0px) rotate(-2deg); }
+            to { transform: translateY(-7px) rotate(2deg); }
+        }
+
+        @keyframes loaderCanShimmer {
+            0% { transform: translateX(-150%); }
+            100% { transform: translateX(150%); }
+        }
+
+        @keyframes loaderBarSweep {
+            0% { left: -45%; width: 35%; }
+            50% { left: 30%; width: 55%; }
+            100% { left: 105%; width: 35%; }
+        }
+
+        /* ==========================================================================
+           Comprehensive Multi-Device Responsive Architecture (Laptop, Tablet, Mobile)
+           ========================================================================== */
+
+        /* 1. Laptops and Compact Desktops (1024px – 1366px) */
+        @media (min-width: 1024px) and (max-width: 1366px) {
+            .hero-content {
+                padding: 0 1.5rem;
+            }
+            .hero-left {
+                max-width: 380px;
+                padding: 4.5rem 0 2rem;
+            }
+            .hero-right {
+                width: 360px;
+                padding: 4.5rem 0 2rem;
+            }
+            .main-title, .side-title {
+                font-size: clamp(4.2rem, 7.5vw, 6.8rem);
+            }
+            .main-product-3d {
+                width: 76vw;
+                height: 76vh;
+            }
+            .product-ground-stage {
+                width: 420px;
+                height: 165px;
+                top: 74%;
+            }
+        }
+
+        /* 2. Tablets & Small Laptops (768px – 1023px) */
+        @media (max-width: 1023px) {
+            body {
+                overflow-x: hidden;
+                overflow-y: auto;
+                height: auto;
+                min-height: 100dvh;
+                -webkit-overflow-scrolling: touch;
+            }
+
+            .header {
+                padding: 1.25rem 2rem;
+            }
+
+            .nav.glass {
+                padding: 0.35rem 0.6rem;
+                gap: 0.35rem;
+            }
+
+            .nav-item {
+                padding: 0.45rem 0.95rem;
+                font-size: 0.82rem;
+            }
+
+            .sound-toggle-btn {
+                padding: 0.65rem 1rem;
+                font-size: 0.8rem;
+            }
+
+            .contact-btn {
+                padding: 0.75rem 1.4rem;
+                font-size: 0.82rem;
+            }
+
+            .hero {
+                height: auto;
+                min-height: 100dvh;
+                padding: 6.8rem 1.75rem 3rem;
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                justify-content: flex-start;
+            }
+
+            .hero-content {
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                text-align: center;
+                gap: 2rem;
+                width: 100%;
+                height: auto;
+            }
+
+            .hero-left {
+                order: 1;
+                align-items: center;
+                text-align: center;
+                padding: 0;
+                max-width: 540px;
+                gap: 1.5rem;
+                width: 100%;
+            }
+
+            .description {
+                max-width: 460px;
+                margin: 0 auto;
+                font-size: 1.05rem;
+            }
+
+            .cta-group {
+                margin: 0.25rem auto;
+            }
+
+            .award-badge {
+                margin: 0 auto;
+            }
+
+            .hero-center {
+                order: 2;
+                position: relative;
+                width: 100%;
+                height: 48vh;
+                min-height: 320px;
+                max-height: 450px;
+                display: flex;
+                justify-content: center;
+                align-items: center;
+                margin: 0.5rem 0;
+                opacity: 1;
+                pointer-events: none;
+            }
+
+            .main-product-3d {
+                position: absolute;
+                top: 50%;
+                left: 50%;
+                transform: translate(-50%, -50%) rotate(22deg);
+                width: 100%;
+                height: 100%;
+                max-width: 460px;
+                pointer-events: auto;
+            }
+
+            .product-ground-stage {
+                position: absolute;
+                top: 76%;
+                left: 50%;
+                width: 320px;
+                height: 120px;
+            }
+
+            .hero-right {
+                order: 3;
+                width: 100%;
+                max-width: 540px;
+                align-items: center;
+                text-align: center;
+                padding: 0;
+                gap: 1.75rem;
+                pointer-events: auto;
+            }
+
+            .product-carousel {
+                align-items: center;
+                width: 100%;
+                gap: 1rem;
+            }
+
+            .carousel-cards {
+                justify-content: center;
+                gap: 1.25rem;
+            }
+
+            .side-title {
+                text-align: center;
+                font-size: clamp(3.4rem, 8vw, 5.5rem);
+                margin-top: 0.75rem;
+            }
+
+            /* Tablet berry scaling */
+            .b1 { width: 75px; height: 75px; }
+            .b2 { width: 45px; height: 45px; }
+            .b3 { width: 85px; height: 85px; }
+            .b4 { width: 52px; height: 52px; }
+            .b5 { width: 50px; height: 50px; }
+            .b6 { width: 65px; height: 65px; }
+            .b7, .b8, .b9 { width: 38px; height: 38px; opacity: 0.5; }
+        }
+
+        /* 3. Mobile Screens (< 768px) */
+        @media (max-width: 767px) {
+            .header {
+                padding: 0.85rem 1rem;
+                flex-wrap: wrap;
+                gap: 0.5rem;
+                justify-content: space-between;
+                background: rgba(1, 15, 12, 0.45);
+                backdrop-filter: blur(16px);
+                -webkit-backdrop-filter: blur(16px);
+                border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+            }
+
+            body.blue-theme .header {
+                background: rgba(1, 12, 20, 0.45);
+            }
+
+            .logo {
+                font-size: 1.1rem;
+                gap: 0.35rem;
+            }
+
+            .logo svg {
+                width: 26px;
+                height: 26px;
+            }
+
+            .header-actions {
+                gap: 0.5rem;
+            }
+
+            .nav.glass {
+                order: 3;
+                width: 100%;
+                justify-content: flex-start;
+                overflow-x: auto;
+                white-space: nowrap;
+                -webkit-overflow-scrolling: touch;
+                scrollbar-width: none;
+                padding: 0.3rem 0.5rem;
+                gap: 0.35rem;
+                margin-top: 0.25rem;
+            }
+
+            .nav.glass::-webkit-scrollbar {
+                display: none;
+            }
+
+            .nav-item {
+                padding: 0.35rem 0.85rem;
+                font-size: 0.78rem;
+                flex-shrink: 0;
+            }
+
+            .sound-toggle-btn {
+                padding: 0.55rem;
+                border-radius: 50%;
+                min-width: 38px;
+                min-height: 38px;
+                justify-content: center;
+            }
+
+            .sound-label {
+                display: none;
+            }
+
+            .contact-btn {
+                padding: 0.55rem 1rem;
+                font-size: 0.78rem;
+            }
+
+            .hero {
+                padding: 7.2rem 1rem 2.5rem;
+            }
+
+            .main-title {
+                font-size: clamp(3rem, 13vw, 4.4rem);
+                line-height: 0.88;
+            }
+
+            .description {
+                font-size: 0.95rem;
+                line-height: 1.55;
+                max-width: 320px;
+                margin: 0 auto;
+                padding: 0 0.5rem;
+            }
+
+            .cta-group {
+                margin: 0.2rem auto;
+            }
+
+            .primary-btn {
+                padding: 0.35rem 0.35rem 0.35rem 1.35rem;
+                font-size: 0.92rem;
+                gap: 1.2rem;
+            }
+
+            .plus-icon {
+                width: 34px;
+                height: 34px;
+                font-size: 1.2rem;
+            }
+
+            .award-badge {
+                margin: 0.3rem auto 0;
+                padding: 0.5rem 0.85rem;
+                gap: 0.75rem;
+            }
+
+            .award-icon {
+                width: 38px;
+                height: 38px;
+            }
+
+            .award-icon svg {
+                width: 18px;
+                height: 18px;
+            }
+
+            .award-title {
+                font-size: 0.65rem;
+            }
+
+            .award-subtitle {
+                font-size: 0.76rem;
+            }
+
+            .hero-center {
+                height: 42vh;
+                min-height: 280px;
+                max-height: 380px;
+                margin: 0.25rem 0;
+            }
+
+            .main-product-3d {
+                max-width: 360px;
+            }
+
+            .product-ground-stage {
+                width: 250px;
+                height: 95px;
+                top: 76%;
+            }
+
+            .hero-right {
+                gap: 1.25rem;
+            }
+
+            .card {
+                width: 112px;
+                padding: 0.75rem;
+                padding-top: 3.6rem;
+                border-radius: 20px;
+                gap: 0.75rem;
+            }
+
+            .card img {
+                width: 95px;
+                margin-top: -5.6rem;
+            }
+
+            .card-info span:first-child {
+                font-size: 0.78rem;
+                font-weight: 700;
+            }
+
+            .card-info span:last-child {
+                font-size: 0.72rem;
+            }
+
+            .side-title {
+                font-size: clamp(2.5rem, 11vw, 3.8rem);
+                line-height: 0.88;
+                text-align: center;
+                margin-top: 0.5rem;
+            }
+
+            /* Mobile berry scaling to prevent visual occlusion */
+            .b1 { width: 52px; height: 52px; top: 18%; left: 8%; }
+            .b2 { width: 32px; height: 32px; top: 62%; left: 14%; }
+            .b3 { width: 56px; height: 56px; top: 16%; left: 78%; }
+            .b4 { width: 38px; height: 38px; top: 8%; left: 56%; }
+            .b5 { width: 34px; height: 34px; top: 82%; left: 10%; }
+            .b6 { width: 42px; height: 42px; top: 74%; left: 82%; }
+            .b7, .b8, .b9 { width: 26px; height: 26px; opacity: 0.4; }
+        }
+
+        /* 4. Small Mobile Phones (< 420px) */
+        @media (max-width: 420px) {
+            .hero {
+                padding: 7.4rem 0.75rem 2rem;
+            }
+
+            .main-title {
+                font-size: 2.8rem;
+            }
+
+            .card {
+                width: 98px;
+                padding: 0.6rem;
+                padding-top: 3.2rem;
+                border-radius: 18px;
+            }
+
+            .card img {
+                width: 82px;
+                margin-top: -5rem;
+            }
+
+            .side-title {
+                font-size: 2.3rem;
+            }
+
+            .hero-center {
+                height: 38vh;
+                min-height: 250px;
+            }
+
+            .product-ground-stage {
+                width: 220px;
+                height: 85px;
+            }
+        }
+
+        /* 5. Responsive Modal & Drawer Adaptations */
+        @media (max-width: 640px) {
+            .modal-card {
+                width: 95vw;
+                max-height: 90dvh;
+                padding: 1.35rem 1.15rem;
+                border-radius: 20px;
+            }
+
+            .modal-title {
+                font-size: 1.75rem;
+            }
+
+            .modal-desc {
+                font-size: 0.88rem;
+                margin-bottom: 1.2rem;
+            }
+
+            .modal-grid-2 {
+                grid-template-columns: 1fr;
+                gap: 0.75rem;
+            }
+
+            .option-selector {
+                grid-template-columns: 1fr;
+                gap: 0.5rem;
+            }
+
+            .info-pill-box {
+                padding: 1rem;
+            }
+
+            .modal-close-btn {
+                top: 0.9rem;
+                right: 0.9rem;
+                width: 32px;
+                height: 32px;
+                font-size: 1.2rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- Lightweight CSS-based Loading Splash Screen -->
+    <div id="loading-screen">
+        <div class="loader-content">
+            <div class="loader-can-wrap">
+                <div class="loader-can-glow"></div>
+                <div class="loader-can-icon"></div>
+            </div>
+            <div class="loader-brand">Guaraná</div>
+            <div class="loader-subtitle">Diet Botanical Soda</div>
+            <div class="loader-track">
+                <div class="loader-bar"></div>
+            </div>
+            <div class="loader-text">Initializing 3D Interactive Stage...</div>
+        </div>
+    </div>
+
+    <!-- 1. Bubbles container -->
+    <div id="bubbles-container"></div>
+
+    <!-- 2. Header (glass nav) -->
+    <header class="header">
+        <div class="logo">
+            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="2" />
+                <path d="M12 8V16M8 12H16" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+            </svg>
+            <span>Soda</span>
+        </div>
+        <nav class="nav glass">
+            <a href="#" class="nav-item active" data-page="home">Home</a>
+            <a href="#" class="nav-item" data-page="ingredients">Ingredients</a>
+            <a href="#" class="nav-item" data-page="taste">Taste</a>
+            <a href="#" class="nav-item" data-page="eco">Eco</a>
+            <a href="#" class="nav-item" data-page="reviews">Reviews</a>
+        </nav>
+        <div class="header-actions">
+            <button class="sound-toggle-btn active" id="sound-btn" aria-label="Toggle Sound Effects" title="Sound Effects">
+                <svg class="sound-icon-on" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
+                    <path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path>
+                    <path d="M19.07 4.93a10 10 0 0 1 0 14.14"></path>
+                </svg>
+                <svg class="sound-icon-off" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:none;">
+                    <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
+                    <line x1="23" y1="9" x2="17" y2="15"></line>
+                    <line x1="17" y1="9" x2="23" y2="15"></line>
+                </svg>
+                <span class="sound-label">Audio On</span>
+            </button>
+            <button class="contact-btn" id="contact-btn" data-page="contact">Contact Us</button>
+        </div>
+    </header>
+
+    <!-- 3. Hero section -->
+    <main class="hero">
+        <div class="hero-content">
+            <!-- 3a. Floating leaves (far background) -->
+            <div class="leaves-container">
+                <model-viewer class="leaf l1" src="https://api.getlayers.ai/storage/v1/object/public/public/assets/soda-14ff8a788d/leaves.glb" environment-image="neutral" exposure="1.0" interaction-prompt="none" camera-orbit="45deg 75deg 105%"></model-viewer>
+                <model-viewer class="leaf l2" src="https://api.getlayers.ai/storage/v1/object/public/public/assets/soda-14ff8a788d/leaves.glb" environment-image="neutral" exposure="1.0" interaction-prompt="none" camera-orbit="-30deg 60deg 105%"></model-viewer>
+                <model-viewer class="leaf l3" src="https://api.getlayers.ai/storage/v1/object/public/public/assets/soda-14ff8a788d/leaves.glb" environment-image="neutral" exposure="1.0" interaction-prompt="none" camera-orbit="120deg 85deg 105%"></model-viewer>
+                <model-viewer class="leaf l4" src="https://api.getlayers.ai/storage/v1/object/public/public/assets/soda-14ff8a788d/leaves.glb" environment-image="neutral" exposure="1.0" interaction-prompt="none" camera-orbit="10deg 45deg 105%"></model-viewer>
+            </div>
+
+            <!-- 3b. Left column -->
+            <div class="hero-left">
+                <h1 class="main-title large-animation-1">
+                    <span class="outline">Pure</span><br>
+                    Zero
+                </h1>
+                <p class="description">
+                    Unleash the crisp taste of zero sugar. <br>
+                    Refreshment redefined in every bubble — <br>
+                    all in one sleek design.
+                </p>
+                <div class="cta-group">
+                    <button class="primary-btn" id="shop-btn" data-page="shop" title="Order Diet Soda">
+                        Shop Now
+                        <span class="plus-icon">+</span>
+                    </button>
+                </div>
+                <div class="award-badge" id="award-badge-btn" data-page="reviews" title="View Awards & Reviews">
+                    <div class="award-icon">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <path d="M12 15L15 18L19 14" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+                            <path d="M7 10L12 15L17 10" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+                        </svg>
+                    </div>
+                    <div class="award-text">
+                        <span class="award-title">DESIGN AWARDS</span>
+                        <span class="award-subtitle">PREMIUM BEVERAGE 2025</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 3c. Background berries (behind the can) -->
+            <div class="berries-container-bg">
+                <model-viewer class="berry b7" src="https://api.getlayers.ai/storage/v1/object/public/public/assets/soda-14ff8a788d/cherry.glb" environment-image="neutral" exposure="1.0" interaction-prompt="none" camera-orbit="-20deg 110deg 105%"></model-viewer>
+                <model-viewer class="berry b8" src="https://api.getlayers.ai/storage/v1/object/public/public/assets/soda-14ff8a788d/cherry.glb" environment-image="neutral" exposure="1.0" interaction-prompt="none" camera-orbit="160deg 45deg 105%"></model-viewer>
+                <model-viewer class="berry b9" src="https://api.getlayers.ai/storage/v1/object/public/public/assets/soda-14ff8a788d/cherry.glb" environment-image="neutral" exposure="1.0" interaction-prompt="none" camera-orbit="45deg 20deg 105%"></model-viewer>
+            </div>
+
+            <!-- 3d. Center product (the 3D can) with Dynamic CSS Ground Reflection -->
+            <div class="hero-center">
+                <!-- Dynamic CSS Ground Reflection & Pedestal Shadow -->
+                <div class="product-ground-stage" id="ground-stage">
+                    <div class="ground-shadow"></div>
+                    <div class="ground-glow"></div>
+                    <div class="ground-reflection">
+                        <div class="reflection-rim"></div>
+                        <div class="reflection-specular"></div>
+                    </div>
+                </div>
+                <model-viewer id="product-model" src="https://api.getlayers.ai/storage/v1/object/public/public/assets/soda-14ff8a788d/deit_soda2.glb" alt="Diet Soda 3D Model" camera-controls
+                    disable-zoom shadow-intensity="0" environment-image="neutral" exposure="1.5"
+                    interaction-prompt="none" camera-orbit="0deg 90deg 380%" field-of-view="30deg"
+                    class="main-product-3d">
+                </model-viewer>
+            </div>
+
+            <!-- 3e. Foreground berries (above text and can) -->
+            <div class="berries-container">
+                <model-viewer class="berry b1" src="https://api.getlayers.ai/storage/v1/object/public/public/assets/soda-14ff8a788d/cherry.glb" environment-image="neutral" exposure="1.2" interaction-prompt="none" camera-orbit="45deg 120deg 105%"></model-viewer>
+                <model-viewer class="berry b2" src="https://api.getlayers.ai/storage/v1/object/public/public/assets/soda-14ff8a788d/cherry.glb" environment-image="neutral" exposure="1.2" interaction-prompt="none" camera-orbit="-120deg 45deg 105%"></model-viewer>
+                <model-viewer class="berry b3" src="https://api.getlayers.ai/storage/v1/object/public/public/assets/soda-14ff8a788d/cherry.glb" environment-image="neutral" exposure="1.2" interaction-prompt="none" camera-orbit="200deg 90deg 105%"></model-viewer>
+                <model-viewer class="berry b4" src="https://api.getlayers.ai/storage/v1/object/public/public/assets/soda-14ff8a788d/cherry.glb" environment-image="neutral" exposure="1.2" interaction-prompt="none" camera-orbit="10deg 20deg 105%"></model-viewer>
+                <model-viewer class="berry b5" src="https://api.getlayers.ai/storage/v1/object/public/public/assets/soda-14ff8a788d/cherry.glb" environment-image="neutral" exposure="1.2" interaction-prompt="none" camera-orbit="-45deg 160deg 105%"></model-viewer>
+                <model-viewer class="berry b6" src="https://api.getlayers.ai/storage/v1/object/public/public/assets/soda-14ff8a788d/cherry.glb" environment-image="neutral" exposure="1.2" interaction-prompt="none" camera-orbit="80deg 75deg 105%"></model-viewer>
+            </div>
+
+            <!-- 3f. Right column (flavor carousel + side title) -->
+            <div class="hero-right">
+                <div class="product-carousel">
+                    <div class="carousel-cards">
+                        <div class="card active" data-flavor="classic">
+                            <img src="https://api.getlayers.ai/storage/v1/object/public/public/assets/soda-14ff8a788d/Green%20Soda.png" alt="Diet Classic">
+                            <div class="card-info">
+                                <span>Diet Classic</span>
+                                <span>$2.99</span>
+                            </div>
+                        </div>
+                        <div class="card" data-flavor="blue">
+                            <img src="https://api.getlayers.ai/storage/v1/object/public/public/assets/soda-14ff8a788d/Blue%20Soda.png" alt="Zero Lime" style="filter: brightness(0.7);">
+                            <div class="card-info">
+                                <span>Zero Lime</span>
+                                <span>$2.99</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="carousel-nav">
+                        <button class="nav-arrow" id="prev-btn" aria-label="Previous flavor">←</button>
+                        <button class="nav-arrow" id="next-btn" aria-label="Next flavor">→</button>
+                    </div>
+                </div>
+                <h2 class="side-title large-animation-1">
+                    <span class="outline">Refreshingly</span><br>
+                    Clean
+                </h2>
+            </div>
+        </div>
+    </main>
+
+    <!-- 4. Showcase Modal & Drawer (Pages System) -->
+    <div id="site-modal" class="modal-overlay" aria-hidden="true">
+        <div class="modal-backdrop" id="modal-backdrop"></div>
+        <div class="modal-card" id="modal-card" role="dialog" aria-modal="true" tabindex="-1">
+            <button class="modal-close-btn" id="modal-close-btn" aria-label="Close modal">&times;</button>
+            <div id="modal-dynamic-content"></div>
+        </div>
+    </div>
+
+    <!-- 5. Hidden frosted-glass SVG filter + model preload -->
+    <svg style="position: absolute; width: 0; height: 0; opacity: 0; pointer-events: none;">
+        <filter id="frosted">
+            <feTurbulence type="fractalNoise" baseFrequency="0.0125" numOctaves="3" result="noise" />
+            <feDisplacementMap in="SourceGraphic" in2="noise" scale="80" xChannelSelector="R" yChannelSelector="G" />
+        </filter>
+    </svg>
+    <div style="display: none;">
+        <!-- Preload berry models to avoid lag during switch -->
+        <model-viewer src="https://api.getlayers.ai/storage/v1/object/public/public/assets/soda-14ff8a788d/blueberry.glb"></model-viewer>
+        <model-viewer src="https://api.getlayers.ai/storage/v1/object/public/public/assets/soda-14ff8a788d/cherry.glb"></model-viewer>
+    </div>
+
+    <!-- The interactions / animation logic -->
+    <script>
+        // --- HTML5 Audio Engine for subtle pops and can spin sounds ---
+        class SodaAudioEngine {
+            constructor() {
+                this.enabled = true;
+                this.initialized = false;
+                this.lastBerryPopTime = 0;
+                this.berryPopPool = [];
+                this.spinAudioPool = [];
+                this.settleAudioPool = [];
+                this.poolIndex = 0;
+                this.sampleRate = 44100;
+
+                this.initAudioBuffers();
+                this.setupInteractionUnlock();
+            }
+
+            createWavUrl(samples) {
+                const buffer = new ArrayBuffer(44 + samples.length * 2);
+                const view = new DataView(buffer);
+                const writeString = (offset, str) => {
+                    for (let i = 0; i < str.length; i++) view.setUint8(offset + i, str.charCodeAt(i));
+                };
+                writeString(0, "RIFF");
+                view.setUint32(4, 36 + samples.length * 2, true);
+                writeString(8, "WAVE");
+                writeString(12, "fmt ");
+                view.setUint32(16, 16, true);
+                view.setUint16(20, 1, true); // PCM
+                view.setUint16(22, 1, true); // Mono
+                view.setUint32(24, this.sampleRate, true);
+                view.setUint32(28, this.sampleRate * 2, true);
+                view.setUint16(32, 2, true);
+                view.setUint16(34, 16, true);
+                writeString(36, "data");
+                view.setUint32(40, samples.length * 2, true);
+
+                let offset = 44;
+                for (let i = 0; i < samples.length; i++, offset += 2) {
+                    const s = Math.max(-1, Math.min(1, samples[i]));
+                    view.setInt16(offset, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
+                }
+                const blob = new Blob([buffer], { type: 'audio/wav' });
+                return URL.createObjectURL(blob);
+            }
+
+            initAudioBuffers() {
+                try {
+                    // 1. Berry Pops: Multiple subtle organic pitch variations (500Hz - 950Hz)
+                    const popFrequencies = [520, 640, 760, 880, 1000];
+                    const popUrls = popFrequencies.map(freq => {
+                        const duration = 0.06; // 60ms subtle pop
+                        const length = Math.floor(this.sampleRate * duration);
+                        const samples = new Float32Array(length);
+                        for (let i = 0; i < length; i++) {
+                            const t = i / this.sampleRate;
+                            const env = Math.exp(-t * 65);
+                            const currentFreq = freq * (1 + 0.35 * Math.exp(-t * 90));
+                            const wave = Math.sin(2 * Math.PI * currentFreq * t) + 0.15 * Math.sin(4 * Math.PI * currentFreq * t);
+                            samples[i] = wave * env * 0.22;
+                        }
+                        return this.createWavUrl(samples);
+                    });
+
+                    // Pool of HTML5 Audio objects
+                    for (let i = 0; i < 15; i++) {
+                        const audio = new Audio(popUrls[i % popUrls.length]);
+                        audio.preload = 'auto';
+                        this.berryPopPool.push(audio);
+                    }
+
+                    // 2. Can Spin Pop & Whoosh (synthesized fizzy aerodynamic spin)
+                    const spinDuration = 0.6;
+                    const spinLength = Math.floor(this.sampleRate * spinDuration);
+                    const spinSamples = new Float32Array(spinLength);
+                    for (let i = 0; i < spinLength; i++) {
+                        const t = i / this.sampleRate;
+                        const startPop = Math.sin(2 * Math.PI * 440 * t) * Math.exp(-t * 35) * 0.35;
+                        const whooshEnv = Math.sin(Math.PI * (t / spinDuration));
+                        const sweepFreq = 300 + Math.sin(t * 16) * 110;
+                        const resonance = Math.sin(2 * Math.PI * sweepFreq * t) * 0.25;
+                        const fizz = (Math.random() * 2 - 1) * 0.08 * whooshEnv;
+                        spinSamples[i] = (startPop + resonance * whooshEnv + fizz) * 0.32;
+                    }
+                    const spinUrl = this.createWavUrl(spinSamples);
+                    for (let i = 0; i < 3; i++) {
+                        const audio = new Audio(spinUrl);
+                        audio.preload = 'auto';
+                        this.spinAudioPool.push(audio);
+                    }
+
+                    // 3. Can Settle / Landing Pop
+                    const settleDuration = 0.08;
+                    const settleLength = Math.floor(this.sampleRate * settleDuration);
+                    const settleSamples = new Float32Array(settleLength);
+                    for (let i = 0; i < settleLength; i++) {
+                        const t = i / this.sampleRate;
+                        const env = Math.exp(-t * 45);
+                        const freq = 380 * (1 + 0.25 * Math.exp(-t * 60));
+                        settleSamples[i] = Math.sin(2 * Math.PI * freq * t) * env * 0.28;
+                    }
+                    const settleUrl = this.createWavUrl(settleSamples);
+                    for (let i = 0; i < 3; i++) {
+                        const audio = new Audio(settleUrl);
+                        audio.preload = 'auto';
+                        this.settleAudioPool.push(audio);
+                    }
+                } catch (e) {
+                    console.warn('Audio synthesis fallback', e);
+                }
+            }
+
+            setupInteractionUnlock() {
+                const unlock = () => {
+                    this.initialized = true;
+                    // Pre-warm first audio element on gesture
+                    if (this.spinAudioPool[0]) {
+                        this.spinAudioPool[0].volume = 0;
+                        this.spinAudioPool[0].play().then(() => {
+                            this.spinAudioPool[0].pause();
+                            this.spinAudioPool[0].currentTime = 0;
+                            this.spinAudioPool[0].volume = 0.3;
+                        }).catch(() => {});
+                    }
+                    window.removeEventListener('pointerdown', unlock);
+                    window.removeEventListener('click', unlock);
+                    window.removeEventListener('keydown', unlock);
+                };
+                window.addEventListener('pointerdown', unlock, { once: true });
+                window.addEventListener('click', unlock, { once: true });
+                window.addEventListener('keydown', unlock, { once: true });
+            }
+
+            playBerryPop() {
+                // Audio is strictly reserved for changing cans per specification
+            }
+
+            playCanSpin() {
+                if (!this.enabled || !this.spinAudioPool.length) return;
+                const audio = this.spinAudioPool[0];
+                audio.currentTime = 0;
+                audio.volume = 0.3;
+                audio.play().catch(() => {});
+            }
+
+            playSettlePop() {
+                if (!this.enabled || !this.settleAudioPool.length) return;
+                const audio = this.settleAudioPool[0];
+                audio.currentTime = 0;
+                audio.volume = 0.25;
+                audio.play().catch(() => {});
+            }
+
+            toggle() {
+                this.enabled = !this.enabled;
+                return this.enabled;
+            }
+        }
+
+        const audioEngine = new SodaAudioEngine();
+
+        // Sound toggle button UI hook
+        const soundBtn = document.getElementById('sound-btn');
+        if (soundBtn) {
+            soundBtn.addEventListener('click', () => {
+                const isEnabled = audioEngine.toggle();
+                const iconOn = soundBtn.querySelector('.sound-icon-on');
+                const iconOff = soundBtn.querySelector('.sound-icon-off');
+                const label = soundBtn.querySelector('.sound-label');
+
+                if (isEnabled) {
+                    soundBtn.classList.add('active');
+                    soundBtn.classList.remove('muted');
+                    if (iconOn) iconOn.style.display = 'block';
+                    if (iconOff) iconOff.style.display = 'none';
+                    if (label) label.textContent = 'Can Sound On';
+                } else {
+                    soundBtn.classList.remove('active');
+                    soundBtn.classList.add('muted');
+                    if (iconOn) iconOn.style.display = 'none';
+                    if (iconOff) iconOff.style.display = 'block';
+                    if (label) label.textContent = 'Can Sound Muted';
+                }
+            });
+        }
+
+        // -------------------------------------------------------------
+        // Lightweight CSS-based Loading Splash Screen Controller
+        // Hides once 'product-model' and initial textures/page initialize
+        // -------------------------------------------------------------
+        const loadingScreen = document.getElementById('loading-screen');
+        let isSplashDismissed = false;
+
+        function dismissLoadingScreen() {
+            if (isSplashDismissed) return;
+            isSplashDismissed = true;
+            if (loadingScreen) {
+                loadingScreen.classList.add('loaded');
+                setTimeout(() => {
+                    if (loadingScreen.parentNode) {
+                        loadingScreen.remove();
+                    }
+                }, 750);
+            }
+        }
+
+        const modelViewer = document.querySelector('#product-model');
+        const groundStage = document.querySelector('#ground-stage');
+        const berriesFG = document.querySelector('.berries-container');
+        const berriesBG = document.querySelector('.berries-container-bg');
+        const leavesBG = document.querySelector('.leaves-container');
+        const allBerries = document.querySelectorAll('.berry');
+        const cards = document.querySelectorAll('.card');
+        let isSwitching = false;
+        let switchSpin = 0;
+        let blueTexture = null;
+        let greenTexture = null;
+
+        // Dismiss splash screen on product-model load, window load, or fail-safe timeout
+        if (modelViewer) {
+            modelViewer.addEventListener('load', () => {
+                setTimeout(dismissLoadingScreen, 200);
+            }, { once: true });
+        }
+        window.addEventListener('load', () => {
+            setTimeout(dismissLoadingScreen, 600);
+        });
+        setTimeout(dismissLoadingScreen, 2600); // Safety fallback
+
+        // Preload textures & Warm up shaders
+        modelViewer.addEventListener('load', async () => {
+            try {
+                blueTexture = await modelViewer.createTexture('https://api.getlayers.ai/storage/v1/object/public/public/assets/soda-14ff8a788d/blue%20base%20color.jpg');
+                greenTexture = await modelViewer.createTexture('https://api.getlayers.ai/storage/v1/object/public/public/assets/soda-14ff8a788d/green%20base%20color.jpg');
+
+                // Shader Warm-up: Briefly apply textures to compile shaders
+                if (modelViewer.model) {
+                    const material = modelViewer.model.materials[0];
+                    if (material && material.pbrMetallicRoughness.baseColorTexture) {
+                        // Apply blue
+                        material.pbrMetallicRoughness.baseColorTexture.setTexture(blueTexture);
+                        await new Promise(r => requestAnimationFrame(r));
+                        // Apply green back
+                        material.pbrMetallicRoughness.baseColorTexture.setTexture(greenTexture);
+                    }
+                }
+            } catch (e) { console.error("Texture preload failed", e); }
+        });
+
+        cards.forEach(card => {
+            card.addEventListener('click', () => {
+                if (isSwitching) return;
+                cards.forEach(c => c.classList.remove('active'));
+                card.classList.add('active');
+                const flavor = card.dataset.flavor;
+                switchFlavor(flavor);
+            });
+        });
+
+        // Navigation arrows toggle flavors
+        document.querySelectorAll('.nav-arrow').forEach(arrow => {
+            arrow.addEventListener('click', () => {
+                if (isSwitching) return;
+                const currentActive = document.querySelector('.card.active');
+                const otherCard = Array.from(cards).find(c => c !== currentActive);
+                if (otherCard) otherCard.click();
+            });
+        });
+
+        async function switchFlavor(flavor) {
+            if (isSwitching) return;
+            isSwitching = true;
+            const body = document.body;
+            const berries = document.querySelectorAll('.berry');
+            const heroCenter = document.querySelector('.hero-center');
+
+            // Play can spin audio sound
+            audioEngine.playCanSpin();
+
+            // 1. Background & Reflection Glow Animation
+            const targetColors = flavor === 'blue' ?
+                { inner: '#0b4f8a', mid: '#04294e', outer: '#010c14', glow: 'rgba(59, 130, 246, 0.5)', reflection: 'rgba(11, 79, 138, 0.4)' } :
+                { inner: '#0b8a78', mid: '#044e3b', outer: '#011411', glow: 'rgba(16, 185, 129, 0.45)', reflection: 'rgba(11, 138, 120, 0.35)' };
+
+            gsap.to(body, {
+                '--bg-inner': targetColors.inner,
+                '--bg-mid': targetColors.mid,
+                '--bg-outer': targetColors.outer,
+                '--reflection-glow': targetColors.glow,
+                '--reflection-color': targetColors.reflection,
+                duration: 1.5,
+                ease: 'power2.inOut'
+            });
+
+            // 2. Can Spin Animation (Simple 360 spin + blur with back settle)
+            const spinObj = { val: 0, blur: 0 };
+            gsap.to(spinObj, {
+                val: 360,
+                blur: 15,
+                duration: 0.6,
+                ease: "power2.in",
+                onUpdate: () => {
+                    switchSpin = spinObj.val;
+                    modelViewer.style.filter = `blur(${spinObj.blur}px)`;
+                    if (groundStage) {
+                        groundStage.style.filter = `blur(${spinObj.blur * 0.3}px)`;
+                    }
+                },
+                onComplete: async () => {
+                    // SWAP at peak
+                    if (flavor === 'blue') {
+                        body.classList.add('blue-theme');
+                        if (modelViewer.model && blueTexture) {
+                            modelViewer.model.materials.forEach(material => {
+                                if (material.pbrMetallicRoughness.baseColorTexture) {
+                                    material.pbrMetallicRoughness.baseColorTexture.setTexture(blueTexture);
+                                }
+                            });
+                        }
+                    } else {
+                        body.classList.remove('blue-theme');
+                        if (modelViewer.model && greenTexture) {
+                            modelViewer.model.materials.forEach(material => {
+                                if (material.pbrMetallicRoughness.baseColorTexture) {
+                                    material.pbrMetallicRoughness.baseColorTexture.setTexture(greenTexture);
+                                }
+                            });
+                        }
+                    }
+
+                    // Settle spin back
+                    gsap.to(spinObj, {
+                        val: 720,
+                        blur: 0,
+                        duration: 1.5,
+                        ease: "back.out(0.7)",
+                        onUpdate: () => {
+                            switchSpin = spinObj.val;
+                            modelViewer.style.filter = `blur(${spinObj.blur}px)`;
+                            if (groundStage) {
+                                groundStage.style.filter = `blur(${spinObj.blur * 0.3}px)`;
+                            }
+                        },
+                        onComplete: () => {
+                            switchSpin = 0;
+                            modelViewer.style.filter = 'none';
+                            if (groundStage) groundStage.style.filter = 'none';
+                            audioEngine.playSettlePop();
+                        }
+                    });
+                }
+            });
+
+            // 3. Berries "Hide & Reveal" with Dynamic Positioning
+            let completedBerries = 0;
+            berries.forEach((berry, i) => {
+                const bW = berry.offsetWidth / 2;
+                const bH = berry.offsetHeight / 2;
+                const centerX = (window.innerWidth / 2 - berry.offsetLeft - bW);
+                const centerY = (window.innerHeight / 2 - berry.offsetTop - bH);
+
+                const startAngle = parseFloat(berry.dataset.angle) || 0;
+                const currentBaseX = parseFloat(berry.dataset.baseX) || 0;
+                const currentBaseY = parseFloat(berry.dataset.baseY) || 0;
+
+                // New random target position - Increased range for visibility
+                const nextBaseX = (Math.random() - 0.5) * 200;
+                const nextBaseY = (Math.random() - 0.5) * 200;
+
+                gsap.set(berry, {
+                    rotation: startAngle,
+                    x: currentBaseX,
+                    y: currentBaseY
+                });
+
+                const berryTl = gsap.timeline();
+
+                berryTl.to(berry, {
+                    x: centerX,
+                    y: centerY,
+                    rotation: startAngle + 45,
+                    scale: 0.1,
+                    opacity: 0,
+                    duration: 0.5,
+                    ease: "power2.in",
+                    onComplete: () => {
+                        berry.src = flavor === 'blue' ? 'https://api.getlayers.ai/storage/v1/object/public/public/assets/soda-14ff8a788d/blueberry.glb' : 'https://api.getlayers.ai/storage/v1/object/public/public/assets/soda-14ff8a788d/cherry.glb';
+                        heroCenter.style.zIndex = 50;
+                    }
+                })
+                .to(berry, {
+                    duration: 0.3
+                })
+                .to(berry, {
+                    onStart: () => {
+                        heroCenter.style.zIndex = 1;
+                    },
+                    x: nextBaseX,
+                    y: nextBaseY,
+                    rotation: startAngle + 90,
+                    scale: 1,
+                    opacity: 1,
+                    duration: 0.9,
+                    ease: "back.out(1.5)",
+                    onComplete: () => {
+                        berry.dataset.angle = startAngle + 90;
+                        berry.dataset.baseX = nextBaseX;
+                        berry.dataset.baseY = nextBaseY;
+                        berry.dataset.rx = 0;
+                        berry.dataset.ry = 0;
+
+                        completedBerries++;
+                        if (completedBerries === berries.length) {
+                            isSwitching = false;
+                        }
+                    }
+                });
+            });
+        }
+
+        // Track berry states for smoothing
+        allBerries.forEach(b => {
+            b.dataset.rx = 0; b.dataset.ry = 0; b.dataset.angle = Math.random() * 360;
+            b.dataset.baseX = 0; b.dataset.baseY = 0;
+            b.dataset.targetRx = 0; b.dataset.targetRy = 0;
+            b.dataset.prevDist = 9999;
+        });
+
+        let mouse = { x: 0, y: 0, px: 0, py: 0 };
+        let currentMouse = { x: 0, y: 0 };
+
+        function updatePointer(clientX, clientY) {
+            mouse.x = (clientX / window.innerWidth) - 0.5;
+            mouse.y = (clientY / window.innerHeight) - 0.5;
+            mouse.px = clientX;
+            mouse.py = clientY;
+        }
+
+        window.addEventListener('mousemove', (e) => {
+            updatePointer(e.clientX, e.clientY);
+        });
+
+        // Touch event support for smartphones and tablets
+        window.addEventListener('touchmove', (e) => {
+            if (e.touches && e.touches[0]) {
+                updatePointer(e.touches[0].clientX, e.touches[0].clientY);
+            }
+        }, { passive: true });
+
+        window.addEventListener('touchstart', (e) => {
+            if (e.touches && e.touches[0]) {
+                updatePointer(e.touches[0].clientX, e.touches[0].clientY);
+            }
+        }, { passive: true });
+
+        function animate() {
+            const time = Date.now() * 0.001;
+            // Target camera position based on mouse
+            // Smoothly interpolate current mouse to target mouse
+            currentMouse.x += (mouse.x - currentMouse.x) * 0.05;
+            currentMouse.y += (mouse.y - currentMouse.y) * 0.05;
+
+            // Tilt the product can + add switch spin
+            modelViewer.cameraOrbit = `${(currentMouse.x * 40) + switchSpin}deg ${90 + (currentMouse.y * 20)}deg 380%`;
+
+            // Update Dynamic Ground Reflection & Pedestal Shadow
+            if (groundStage) {
+                // Synchronize ground reflection tilt with camera orbit & mouse
+                const floatPhase = (time * (Math.PI * 2 / 6)); // sync with 6s float animation
+                const floatOffset = Math.sin(floatPhase) * 10;
+                const shadowScale = 1 - (Math.sin(floatPhase) * 0.06);
+                const shadowOpacity = 0.88 - (Math.sin(floatPhase) * 0.12);
+
+                groundStage.style.transform = `translate(calc(-50% + ${currentMouse.x * 25}px), calc(-50% + ${floatOffset + currentMouse.y * 18}px)) rotateX(${64 + currentMouse.y * 10}deg) rotateZ(${-15 + currentMouse.x * 12}deg) scale(${shadowScale})`;
+                groundStage.style.opacity = `${shadowOpacity}`;
+            }
+
+            // Update parallax containers - Always
+            berriesFG.style.transform = `translate(${currentMouse.x * 60}px, ${currentMouse.y * 60}px)`;
+            berriesBG.style.transform = `translate(${currentMouse.x * -30}px, ${currentMouse.y * -30}px)`;
+            leavesBG.style.transform = `translate(${currentMouse.x * -15}px, ${currentMouse.y * -15}px)`;
+
+            // Subtle GSAP parallax effect on 'Shop Now' button and 'Award Badge' reacting to mouse movement
+            const parallaxShopBtn = document.querySelector('.primary-btn');
+            const parallaxAwardBadge = document.querySelector('.award-badge');
+            if (parallaxShopBtn) {
+                gsap.to(parallaxShopBtn, {
+                    x: currentMouse.x * 24,
+                    y: currentMouse.y * 14,
+                    rotationY: currentMouse.x * 12,
+                    rotationX: -currentMouse.y * 10,
+                    duration: 0.35,
+                    ease: 'power1.out',
+                    overwrite: 'auto'
+                });
+            }
+            if (parallaxAwardBadge) {
+                gsap.to(parallaxAwardBadge, {
+                    x: currentMouse.x * 16,
+                    y: currentMouse.y * 10,
+                    rotationY: currentMouse.x * 8,
+                    rotationX: -currentMouse.y * 7,
+                    duration: 0.4,
+                    ease: 'power1.out',
+                    overwrite: 'auto'
+                });
+            }
+
+            // Update each berry with its own smoothing and float - ONLY IF NOT SWITCHING
+            if (!isSwitching) {
+                const isMobile = window.innerWidth < 768;
+                const isTablet = window.innerWidth >= 768 && window.innerWidth < 1024;
+                const maxRepelDist = isMobile ? 180 : (isTablet ? 280 : 400);
+                const maxRepelForce = isMobile ? -36 : (isTablet ? -55 : -80);
+
+                allBerries.forEach((berry, i) => {
+                    const berryRect = berry.getBoundingClientRect();
+                    const berryX = berryRect.left + berryRect.width / 2;
+                    const berryY = berryRect.top + berryRect.height / 2;
+
+                    const diffX = mouse.px - berryX;
+                    const diffY = mouse.py - berryY;
+                    const distance = Math.sqrt(diffX * diffX + diffY * diffY);
+
+                    let targetRx = 0, targetRy = 0, speedMult = 1;
+
+                    if (distance < maxRepelDist) {
+                        const force = (maxRepelDist - distance) / maxRepelDist;
+                        targetRx = (diffX / distance) * force * maxRepelForce;
+                        targetRy = (diffY / distance) * force * maxRepelForce;
+                        speedMult = 1 + force * (isMobile ? 3 : 5);
+                    }
+                    berry.dataset.prevDist = distance;
+
+                    // Lerp repulsion values
+                    let rx = parseFloat(berry.dataset.rx) || 0;
+                    let ry = parseFloat(berry.dataset.ry) || 0;
+                    let angle = parseFloat(berry.dataset.angle) || 0;
+                    let baseX = parseFloat(berry.dataset.baseX) || 0;
+                    let baseY = parseFloat(berry.dataset.baseY) || 0;
+
+                    rx += (targetRx - rx) * 0.1;
+                    ry += (targetRy - ry) * 0.1;
+                    angle += 0.2 * speedMult;
+
+                    berry.dataset.rx = rx;
+                    berry.dataset.ry = ry;
+                    berry.dataset.angle = angle;
+
+                    // Floating effect
+                    const dur = [5, 7, 6, 8, 5.5, 6.5, 9, 11, 10][i % 9];
+                    const phase = (time + i * 0.7) * (Math.PI * 2 / dur);
+                    const floatY = Math.sin(phase) * 15;
+                    const floatAngle = Math.cos(phase) * 6;
+
+                    berry.style.transform = `translate(calc(${rx + baseX}px), calc(${ry + baseY}px + ${floatY}px)) rotate(calc(${angle}deg + ${floatAngle}deg))`;
+                });
+            }
+
+            // Update leaves with float - ALWAYS
+            document.querySelectorAll('.leaf').forEach((leaf, i) => {
+                const dur = 10 + i * 2;
+                const phase = (time + i * 1.2) * (Math.PI * 2 / dur);
+                const floatY = Math.sin(phase) * 20;
+                const floatX = Math.cos(phase * 0.5) * 15;
+                const floatAngle = Math.sin(phase * 0.3) * 15;
+                leaf.style.transform = `translate(${floatX}px, ${floatY}px) rotate(${floatAngle}deg)`;
+            });
+
+            requestAnimationFrame(animate);
+        }
+
+        animate();
+
+        // Bubbles Generator using bubble.png with interactive click burst
+        const bubblesContainer = document.getElementById('bubbles-container');
+        function createBubble() {
+            if (!bubblesContainer) return;
+            const bubble = document.createElement('img');
+            bubble.src = 'https://api.getlayers.ai/storage/v1/object/public/public/assets/soda-14ff8a788d/bubble.png';
+            bubble.className = 'bubble-img';
+            bubble.setAttribute('role', 'button');
+            bubble.setAttribute('aria-label', 'Pop bubble');
+            const size = Math.random() * 22 + 12 + 'px';
+            bubble.style.width = size;
+            bubble.style.height = 'auto';
+            bubble.style.left = Math.random() * 100 + '%';
+            bubble.style.bottom = '-60px';
+            bubble.style.opacity = Math.random() * 0.4 + 0.25;
+
+            const duration = Math.random() * 6 + 4;
+            bubble.style.animation = `floatUpImg ${duration}s linear forwards`;
+
+            let isPopped = false;
+            const popBubble = (e) => {
+                if (isPopped) return;
+                isPopped = true;
+                e.preventDefault();
+                e.stopPropagation();
+
+                // Stop continuous float animation so GSAP can take over transform
+                bubble.style.animation = 'none';
+
+                // Trigger small burst animation using GSAP before removing
+                gsap.timeline({
+                    onComplete: () => {
+                        if (bubble.parentNode) bubble.remove();
+                    }
+                })
+                .to(bubble, {
+                    scale: 2.2,
+                    opacity: 0,
+                    rotation: (Math.random() - 0.5) * 90,
+                    filter: 'brightness(2) contrast(1.5)',
+                    duration: 0.18,
+                    ease: 'power2.out'
+                });
+            };
+
+            bubble.addEventListener('pointerdown', popBubble);
+            bubble.addEventListener('click', popBubble);
+
+            bubblesContainer.appendChild(bubble);
+            setTimeout(() => {
+                if (!isPopped && bubble.parentNode) {
+                    bubble.remove();
+                }
+            }, duration * 1000);
+        }
+        setInterval(createBubble, 380);
+
+        // Keyboard Event Listeners for flavor switching (Arrow keys) and Shop Now (Enter)
+        window.addEventListener('keydown', (e) => {
+            // Arrow keys: switch between flavors
+            if (e.key === 'ArrowLeft' || e.key === 'ArrowRight' || e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+                e.preventDefault();
+                if (isSwitching) return;
+
+                const currentActive = document.querySelector('.card.active');
+                const classicCard = document.querySelector('.card[data-flavor="classic"]');
+                const blueCard = document.querySelector('.card[data-flavor="blue"]');
+
+                if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
+                    if (classicCard && currentActive !== classicCard) {
+                        classicCard.click();
+                    } else if (blueCard && currentActive !== blueCard) {
+                        blueCard.click();
+                    }
+                } else if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
+                    if (blueCard && currentActive !== blueCard) {
+                        blueCard.click();
+                    } else if (classicCard && currentActive !== classicCard) {
+                        classicCard.click();
+                    }
+                }
+            } else if (e.key === 'Enter') {
+                // Enter key: trigger primary 'Shop Now' button
+                const primaryBtn = document.querySelector('.primary-btn');
+                if (primaryBtn) {
+                    e.preventDefault();
+
+                    // Tactile GSAP press animation on primary button
+                    gsap.timeline()
+                        .to(primaryBtn, { scale: 0.94, duration: 0.08, ease: 'power1.in' })
+                        .to(primaryBtn, { scale: 1, duration: 0.22, ease: 'back.out(2.5)' });
+
+                    primaryBtn.click();
+                }
+            }
+        });
+
+        // Add visual click feedback for Primary 'Shop Now' button
+        const shopNowBtn = document.querySelector('.primary-btn');
+        if (shopNowBtn) {
+            shopNowBtn.addEventListener('click', () => {
+                const plus = shopNowBtn.querySelector('.plus-icon');
+                if (plus) {
+                    gsap.fromTo(plus, 
+                        { rotation: 0, scale: 0.8 }, 
+                        { rotation: 90, scale: 1, duration: 0.35, ease: 'back.out(2)' }
+                    );
+                }
+            });
+        }
+
+        // --- Interactive Showcase Pages & Drawer System ---
+        const siteModal = document.getElementById('site-modal');
+        const modalBackdrop = document.getElementById('modal-backdrop');
+        const modalCloseBtn = document.getElementById('modal-close-btn');
+        const modalCard = document.getElementById('modal-card');
+        const modalDynamicContent = document.getElementById('modal-dynamic-content');
+        const navLinks = document.querySelectorAll('.nav-item');
+
+        let currentActivePage = 'home';
+        let shopState = {
+            pack: '12',
+            pricePerPack: 29.99,
+            flavor: 'Diet Classic',
+            quantity: 1
+        };
+
+        const pageTemplates = {
+            ingredients: () => `
+                <div class="modal-tag">Pure Botanical Formula</div>
+                <h2 class="modal-title">Zero Sugar. Pure Taste.</h2>
+                <p class="modal-desc">
+                    Every can of Diet Soda is formulated with single-origin Amazonian botanicals, crisp spring water, and natural effervescence. Crafted for clean hydration with zero artificial colors or aspartame.
+                </p>
+                <div class="modal-grid-2">
+                    <div class="info-pill-box">
+                        <div class="info-pill-title">
+                            <span>Nutrition Facts</span>
+                            <span style="font-size:0.75rem; color:#fbcfe8;">Per 350ml Can</span>
+                        </div>
+                        <div class="nutrition-row"><span>Calories</span><strong style="color:#a7f3d0;">0</strong></div>
+                        <div class="nutrition-row"><span>Total Sugars</span><strong style="color:#a7f3d0;">0g</strong></div>
+                        <div class="nutrition-row"><span>Total Carbohydrates</span><strong>0g</strong></div>
+                        <div class="nutrition-row"><span>Sodium</span><strong>15mg (1% DV)</strong></div>
+                        <div class="nutrition-row"><span>Natural Caffeine</span><strong>45mg</strong></div>
+                        <div class="nutrition-row"><span>Vitamin C</span><strong>18mg (20% DV)</strong></div>
+                    </div>
+                    <div class="info-pill-box">
+                        <div class="info-pill-title">Botanical Actives</div>
+                        <p class="info-pill-desc" style="margin-bottom:0.6rem;">
+                            <strong>Brazilian Guaraná:</strong> Hand-harvested berry extract delivering clean, calm energy without the sharp caffeine spikes of synthetic drinks.
+                        </p>
+                        <p class="info-pill-desc">
+                            <strong>Citrus Botanicals:</strong> Cold-pressed Persian lime and citrus essences distilled for a dry, effervescent snap.
+                        </p>
+                    </div>
+                </div>
+                <div class="badge-pill-group">
+                    <span class="badge-pill">✓ 100% Non-GMO</span>
+                    <span class="badge-pill">✓ Certified Vegan</span>
+                    <span class="badge-pill">✓ Gluten-Free</span>
+                    <span class="badge-pill">✓ Zero Aspartame</span>
+                    <span class="badge-pill">✓ Infinite Recyclable Can</span>
+                </div>
+                <div style="margin-top: 1.5rem;">
+                    <button class="form-submit-btn" onclick="openModal('shop')">Order Your Pack Now →</button>
+                </div>
+            `,
+
+            taste: () => `
+                <div class="modal-tag">Sensory Flavor Architecture</div>
+                <h2 class="modal-title">Crisp. Uplifting. Micro-Fizz.</h2>
+                <p class="modal-desc">
+                    Select a flavor below to test its flavor profile and see the 3D can react live in real time.
+                </p>
+                <div class="modal-grid-2">
+                    <div class="flavor-tester-card ${document.body.classList.contains('blue-theme') ? '' : 'active-test'}" id="taste-card-classic">
+                        <div style="display:flex; justify-content:space-between; align-items:center;">
+                            <strong style="font-size:1.05rem;">Diet Classic</strong>
+                            <span class="badge-pill" style="margin:0; font-size:0.7rem; color:#a7f3d0;">Original Guaraná</span>
+                        </div>
+                        <p class="info-pill-desc">
+                            Bold, exotic berry notes with an effervescent champagne-like finish. Dry and invigorating with zero syrupy cling.
+                        </p>
+                        <button class="form-submit-btn" style="padding:0.65rem 1rem; font-size:0.85rem;" onclick="testFlavorLive('classic')">
+                            Switch Can to Classic
+                        </button>
+                    </div>
+
+                    <div class="flavor-tester-card ${document.body.classList.contains('blue-theme') ? 'active-test' : ''}" id="taste-card-blue">
+                        <div style="display:flex; justify-content:space-between; align-items:center;">
+                            <strong style="font-size:1.05rem;">Zero Lime</strong>
+                            <span class="badge-pill" style="margin:0; font-size:0.7rem; color:#93c5fd;">Citrus Micro-Fizz</span>
+                        </div>
+                        <p class="info-pill-desc">
+                            Sun-drenched Persian lime zest infused with sparkling spring water. Crisp, bright, and intensely thirst-quenching.
+                        </p>
+                        <button class="form-submit-btn" style="padding:0.65rem 1rem; font-size:0.85rem;" onclick="testFlavorLive('blue')">
+                            Switch Can to Zero Lime
+                        </button>
+                    </div>
+                </div>
+                <div class="info-pill-box" style="margin-top:1rem;">
+                    <div class="info-pill-title">Sensory Balance Metrics</div>
+                    <div style="display:flex; flex-direction:column; gap:0.6rem; margin-top:0.6rem;">
+                        <div>
+                            <div style="display:flex; justify-content:space-between; font-size:0.8rem; margin-bottom:0.25rem;">
+                                <span>Crispness Index</span><span>98%</span>
+                            </div>
+                            <div style="background:rgba(255,255,255,0.1); border-radius:6px; height:6px; overflow:hidden;">
+                                <div style="background:linear-gradient(90deg, #fbcfe8, #a7f3d0); width:98%; height:100%;"></div>
+                            </div>
+                        </div>
+                        <div>
+                            <div style="display:flex; justify-content:space-between; font-size:0.8rem; margin-bottom:0.25rem;">
+                                <span>Micro-Carbonation Softness</span><span>94%</span>
+                            </div>
+                            <div style="background:rgba(255,255,255,0.1); border-radius:6px; height:6px; overflow:hidden;">
+                                <div style="background:linear-gradient(90deg, #fbcfe8, #93c5fd); width:94%; height:100%;"></div>
+                            </div>
+                        </div>
+                        <div>
+                            <div style="display:flex; justify-content:space-between; font-size:0.8rem; margin-bottom:0.25rem;">
+                                <span>Clean Aftertaste (No Lingering Sweetener)</span><span>100%</span>
+                            </div>
+                            <div style="background:rgba(255,255,255,0.1); border-radius:6px; height:6px; overflow:hidden;">
+                                <div style="background:#a7f3d0; width:100%; height:100%;"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `,
+
+            eco: () => `
+                <div class="modal-tag">Planet First Initiative</div>
+                <h2 class="modal-title">Infinite Circularity & Care</h2>
+                <p class="modal-desc">
+                    We believe the most refreshing beverage is one that leaves no trace on our planet. That's why we eliminate single-use plastics from our entire supply chain.
+                </p>
+                <div style="display:flex; flex-direction:column; gap:0.9rem;">
+                    <div class="info-pill-box">
+                        <div class="info-pill-title">
+                            <span>100% Infinitely Recyclable Aluminum</span>
+                            <span style="color:#a7f3d0; font-size:0.8rem;">Circular Forever</span>
+                        </div>
+                        <p class="info-pill-desc">
+                            Unlike plastics which degrade after a single recycle, aluminum can be recycled infinitely without losing purity. Over 75% of all aluminum ever mined on Earth is still in circulation today.
+                        </p>
+                    </div>
+
+                    <div class="info-pill-box">
+                        <div class="info-pill-title">
+                            <span>Plastic-Free Packaging</span>
+                            <span style="color:#fbcfe8; font-size:0.8rem;">Zero Landfill</span>
+                        </div>
+                        <p class="info-pill-desc">
+                            Every case is cradled in 100% biodegradable unbleached pulp cardboard and sealed with water-activated plant starch tape. No plastic six-pack rings, ever.
+                        </p>
+                    </div>
+
+                    <div class="info-pill-box">
+                        <div class="info-pill-title">
+                            <span>1% for Amazonian Agroforestry</span>
+                            <span style="color:#a7f3d0; font-size:0.8rem;">Direct Giveback</span>
+                        </div>
+                        <p class="info-pill-desc">
+                            1% of every purchase goes directly to regenerative agriculture collectives in Maués, Brazil, protecting indigenous Guaraná ecosystems and supporting local farmers.
+                        </p>
+                    </div>
+                </div>
+                <div style="margin-top: 1.5rem;">
+                    <button class="form-submit-btn" onclick="openModal('shop')">Support Clean Refreshment (Shop Now)</button>
+                </div>
+            `,
+
+            reviews: () => `
+                <div class="modal-tag">Design & Taste Awards</div>
+                <h2 class="modal-title">Award-Winning Craft Soda</h2>
+                <p class="modal-desc">
+                    Honored with the <strong>2025 Premium Beverage Design Award</strong> and acclaimed by culinary critics and over 12,000 verified customers nationwide.
+                </p>
+                <div class="review-card-item">
+                    <div class="review-stars">★★★★★</div>
+                    <p class="review-quote">
+                        "Finally a diet soda that respects the palate! The botanical Guaraná aroma is authentic, the carbonation feels like fine champagne, and there's none of that synthetic chemical aspartame bite."
+                    </p>
+                    <div class="review-author">
+                        <span>Elena Rostova • Sommelier & Food Critic</span>
+                        <span style="color:#a7f3d0;">Verified Buyer</span>
+                    </div>
+                </div>
+                <div class="review-card-item">
+                    <div class="review-stars">★★★★★</div>
+                    <p class="review-quote">
+                        "Zero Lime has officially replaced my afternoon energy drink. Crisp, electrifying, and the packaging looks like a sculpture on my desk."
+                    </p>
+                    <div class="review-author">
+                        <span>Marcus Taylor • Creative Director, NYC</span>
+                        <span style="color:#a7f3d0;">Verified Buyer</span>
+                    </div>
+                </div>
+                <div class="review-card-item">
+                    <div class="review-stars">★★★★★</div>
+                    <p class="review-quote">
+                        "Shipped in plastic-free recyclable cartons, iced cold it is unmatched. 10/10 product and brand ethos."
+                    </p>
+                    <div class="review-author">
+                        <span>Chloe Chen • Designer & Runner</span>
+                        <span style="color:#a7f3d0;">Verified Buyer</span>
+                    </div>
+                </div>
+                <div style="margin-top: 1.5rem;">
+                    <button class="form-submit-btn" onclick="openModal('shop')">Order A Case Now →</button>
+                </div>
+            `,
+
+            contact: () => `
+                <div class="modal-tag">Concierge Desk</div>
+                <h2 class="modal-title">Let's Connect</h2>
+                <p class="modal-desc">
+                    Have questions about retail stockists, corporate bulk deliveries, or press inquiries? Send our beverage team a note.
+                </p>
+                <form id="contact-form" onsubmit="handleContactSubmit(event)">
+                    <div class="modal-grid-2">
+                        <div>
+                            <label style="display:block; font-size:0.8rem; margin-bottom:0.4rem; color:var(--muted-color);">Your Name</label>
+                            <input type="text" class="form-input" id="contact-name" placeholder="Alex Morgan" required>
+                        </div>
+                        <div>
+                            <label style="display:block; font-size:0.8rem; margin-bottom:0.4rem; color:var(--muted-color);">Email Address</label>
+                            <input type="email" class="form-input" id="contact-email" placeholder="alex@domain.com" required>
+                        </div>
+                    </div>
+                    <div>
+                        <label style="display:block; font-size:0.8rem; margin-bottom:0.4rem; color:var(--muted-color);">Subject / Topic</label>
+                        <select class="form-input" id="contact-topic" style="background:#13251e; color:white;">
+                            <option value="Wholesale">Wholesale & Retail Stockist Inquiries</option>
+                            <option value="Press">Press & Media Collaborations</option>
+                            <option value="Support">Order & Delivery Inquiries</option>
+                            <option value="General">General Feedback & Ideas</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label style="display:block; font-size:0.8rem; margin-bottom:0.4rem; color:var(--muted-color);">Message</label>
+                        <textarea class="form-input" id="contact-msg" rows="3" placeholder="Tell us about your inquiry..." required style="resize:none;"></textarea>
+                    </div>
+                    <button type="submit" class="form-submit-btn" id="contact-submit-btn">
+                        Send Message
+                    </button>
+                </form>
+            `,
+
+            shop: () => `
+                <div class="modal-tag">Direct From Origin</div>
+                <h2 class="modal-title">Craft Your Case</h2>
+                <p class="modal-desc">
+                    Freshly canned in small craft batches. Shipped cold-packed in 100% recyclable insulation.
+                </p>
+
+                <div style="margin-bottom:1rem;">
+                    <span style="font-size:0.85rem; font-weight:600; display:block; margin-bottom:0.5rem;">1. Select Pack Size</span>
+                    <div class="option-selector">
+                        <button type="button" class="option-btn ${shopState.pack === '6' ? 'selected' : ''}" onclick="selectPack('6', 16.99)">
+                            <span class="option-name">6-Pack</span>
+                            <span class="option-price">$16.99</span>
+                            <span style="font-size:0.65rem; color:var(--muted-color);">$2.83 / can</span>
+                        </button>
+                        <button type="button" class="option-btn ${shopState.pack === '12' ? 'selected' : ''}" onclick="selectPack('12', 29.99)">
+                            <span class="option-name">12-Pack</span>
+                            <span class="option-price">$29.99</span>
+                            <span style="font-size:0.65rem; color:#fbcfe8;">★ Most Popular</span>
+                        </button>
+                        <button type="button" class="option-btn ${shopState.pack === '24' ? 'selected' : ''}" onclick="selectPack('24', 49.99)">
+                            <span class="option-name">24-Pack</span>
+                            <span class="option-price">$49.99</span>
+                            <span style="font-size:0.65rem; color:#a7f3d0;">Best Value</span>
+                        </button>
+                    </div>
+                </div>
+
+                <div style="margin-bottom:1.25rem;">
+                    <span style="font-size:0.85rem; font-weight:600; display:block; margin-bottom:0.5rem;">2. Select Flavor</span>
+                    <div class="option-selector">
+                        <button type="button" class="option-btn ${shopState.flavor === 'Diet Classic' ? 'selected' : ''}" onclick="selectFlavor('Diet Classic')">
+                            <span class="option-name">Diet Classic</span>
+                            <span class="option-price">Original Guaraná</span>
+                        </button>
+                        <button type="button" class="option-btn ${shopState.flavor === 'Zero Lime' ? 'selected' : ''}" onclick="selectFlavor('Zero Lime')">
+                            <span class="option-name">Zero Lime</span>
+                            <span class="option-price">Citrus Micro-Fizz</span>
+                        </button>
+                        <button type="button" class="option-btn ${shopState.flavor === 'Variety Pack' ? 'selected' : ''}" onclick="selectFlavor('Variety Pack')">
+                            <span class="option-name">Variety Pack</span>
+                            <span class="option-price">Half & Half</span>
+                        </button>
+                    </div>
+                </div>
+
+                <div class="qty-control-box">
+                    <span style="font-size:0.9rem; font-weight:600;">Quantity</span>
+                    <div class="qty-stepper">
+                        <button type="button" class="qty-btn" onclick="updateQty(-1)" aria-label="Decrease quantity">-</button>
+                        <span id="shop-qty-display" style="font-weight:700; min-width:24px; text-align:center;">${shopState.quantity}</span>
+                        <button type="button" class="qty-btn" onclick="updateQty(1)" aria-label="Increase quantity">+</button>
+                    </div>
+                </div>
+
+                <div style="background:rgba(255,255,255,0.04); border-radius:18px; padding:1rem; margin-bottom:1.5rem;">
+                    <div class="order-summary-row">
+                        <span>Items (${shopState.quantity} × ${shopState.pack}-pack ${shopState.flavor})</span>
+                        <span id="shop-subtotal">$${(shopState.pricePerPack * shopState.quantity).toFixed(2)}</span>
+                    </div>
+                    <div class="order-summary-row">
+                        <span>Express Cold-Chain Shipping</span>
+                        <span style="color:#a7f3d0; font-weight:600;">FREE</span>
+                    </div>
+                    <div class="order-summary-row total-row">
+                        <span>Total</span>
+                        <span id="shop-total" style="color:#fbcfe8;">$${(shopState.pricePerPack * shopState.quantity).toFixed(2)}</span>
+                    </div>
+                    <button type="button" class="form-submit-btn" onclick="placeOrder()">
+                        Complete Order • <span id="shop-btn-total">$${(shopState.pricePerPack * shopState.quantity).toFixed(2)}</span>
+                    </button>
+                </div>
+            `
+        };
+
+        function openModal(pageKey) {
+            if (!pageTemplates[pageKey]) return;
+            currentActivePage = pageKey;
+            modalDynamicContent.innerHTML = pageTemplates[pageKey]();
+            siteModal.classList.add('active');
+            siteModal.setAttribute('aria-hidden', 'false');
+            modalCard.focus();
+
+            // Update nav active indicator
+            navLinks.forEach(link => {
+                link.classList.toggle('active', link.dataset.page === pageKey);
+            });
+        }
+
+        function closeModal() {
+            if (!siteModal.classList.contains('active')) return;
+            siteModal.classList.remove('active');
+            siteModal.setAttribute('aria-hidden', 'true');
+            currentActivePage = 'home';
+
+            // Reset active nav link back to Home
+            navLinks.forEach(link => {
+                link.classList.toggle('active', link.dataset.page === 'home');
+            });
+        }
+
+        // Event listeners for closing modal
+        if (modalCloseBtn) modalCloseBtn.addEventListener('click', closeModal);
+        if (modalBackdrop) modalBackdrop.addEventListener('click', closeModal);
+
+        window.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape' && siteModal.classList.contains('active')) {
+                closeModal();
+            }
+        });
+
+        // Wire all [data-page] triggers (Nav links, CTA button, Award badge, Contact button)
+        document.querySelectorAll('[data-page]').forEach(trigger => {
+            trigger.addEventListener('click', (e) => {
+                e.preventDefault();
+                const page = trigger.dataset.page;
+                if (page === 'home') {
+                    closeModal();
+                } else {
+                    openModal(page);
+                }
+            });
+        });
+
+        // Shop interactive handlers
+        window.selectPack = function(packSize, price) {
+            shopState.pack = packSize;
+            shopState.pricePerPack = price;
+            refreshShopView();
+        };
+
+        window.selectFlavor = function(flavorName) {
+            shopState.flavor = flavorName;
+            refreshShopView();
+        };
+
+        window.updateQty = function(delta) {
+            const newQty = shopState.quantity + delta;
+            if (newQty >= 1 && newQty <= 10) {
+                shopState.quantity = newQty;
+                refreshShopView();
+            }
+        };
+
+        function refreshShopView() {
+            const total = (shopState.pricePerPack * shopState.quantity).toFixed(2);
+            const qtyDisp = document.getElementById('shop-qty-display');
+            const subtotalDisp = document.getElementById('shop-subtotal');
+            const totalDisp = document.getElementById('shop-total');
+            const btnTotalDisp = document.getElementById('shop-btn-total');
+
+            if (qtyDisp) qtyDisp.textContent = shopState.quantity;
+            if (subtotalDisp) subtotalDisp.textContent = `$${total}`;
+            if (totalDisp) totalDisp.textContent = `$${total}`;
+            if (btnTotalDisp) btnTotalDisp.textContent = `$${total}`;
+
+            // Re-render whole shop view to keep selected highlights synchronized
+            modalDynamicContent.innerHTML = pageTemplates.shop();
+        }
+
+        window.placeOrder = function() {
+            const orderNum = Math.floor(10000 + Math.random() * 90000);
+            const total = (shopState.pricePerPack * shopState.quantity).toFixed(2);
+
+            modalDynamicContent.innerHTML = `
+                <div class="order-success-card">
+                    <div class="order-success-icon">✓</div>
+                    <div class="modal-tag" style="background:rgba(16, 185, 129, 0.2); color:#a7f3d0; border-color:#10b981;">Order Confirmed!</div>
+                    <h2 class="modal-title" style="font-size:2rem; margin-bottom:0.5rem;">You're All Set!</h2>
+                    <p class="modal-desc" style="max-width:440px; margin:0 auto 1.5rem;">
+                        Thank you for choosing pure zero refreshment. Your case of <strong>${shopState.quantity} × ${shopState.pack}-pack (${shopState.flavor})</strong> has been logged and is heading to small-batch packaging.
+                    </p>
+                    <div class="info-pill-box" style="text-align:left; max-width:440px; margin:0 auto 1.5rem;">
+                        <div class="nutrition-row"><span>Order Reference</span><strong>#SODA-${orderNum}</strong></div>
+                        <div class="nutrition-row"><span>Total Paid</span><strong style="color:#fbcfe8;">$${total}</strong></div>
+                        <div class="nutrition-row"><span>Estimated Arrival</span><strong style="color:#a7f3d0;">2 Business Days (Cold Pack)</strong></div>
+                        <div class="nutrition-row"><span>Tracking Link</span><span>Dispatched via SMS</span></div>
+                    </div>
+                    <button class="form-submit-btn" style="max-width:320px; margin:0 auto;" onclick="closeModal()">
+                        Return to 3D Experience
+                    </button>
+                </div>
+            `;
+        };
+
+        window.testFlavorLive = function(flavor) {
+            switchFlavor(flavor);
+            // Synchronize cards inside Taste modal
+            const classicCard = document.getElementById('taste-card-classic');
+            const blueCard = document.getElementById('taste-card-blue');
+            if (classicCard && blueCard) {
+                classicCard.classList.toggle('active-test', flavor === 'classic');
+                blueCard.classList.toggle('active-test', flavor === 'blue');
+            }
+        };
+
+        window.handleContactSubmit = function(e) {
+            e.preventDefault();
+            const name = document.getElementById('contact-name')?.value || 'Friend';
+            modalDynamicContent.innerHTML = `
+                <div class="order-success-card">
+                    <div class="order-success-icon" style="background:rgba(251, 207, 232, 0.2); border-color:#fbcfe8; color:#fbcfe8;">✉</div>
+                    <div class="modal-tag">Message Dispatched</div>
+                    <h2 class="modal-title" style="font-size:2rem; margin-bottom:0.5rem;">Thank You, ${name}!</h2>
+                    <p class="modal-desc" style="max-width:440px; margin:0 auto 1.5rem;">
+                        We have received your message. Our beverage concierge will review your inquiry and follow up within 24 hours.
+                    </p>
+                    <button class="form-submit-btn" style="max-width:300px; margin:0 auto;" onclick="closeModal()">
+                        Back to Home
+                    </button>
+                </div>
+            `;
+        };
+
+        window.openModal = openModal;
+        window.closeModal = closeModal;
+    </script>
+</body>
+</html>
